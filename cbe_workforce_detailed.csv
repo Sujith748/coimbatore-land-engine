@@ -1,0 +1,16 @@
+Area_Name,Primary_Workforce_Category,Settlement_Type,Worker_Density,Dominant_Migrant_Origin,Housing_Infrastructure,Metro_Access_Line,Industrial_Cluster_Type,Education_Tech_Hubs,Spatial_Weight_Index
+Kurichi (SIDCO),Semi-Skilled (Industrial),Foundry & MSME Cluster,Very High (4000+ workers),Bihar / Jharkhand / Odisha,528-room Govt Hostel / Informal,Yellow Line (Planned),Pumps & Motors,Govt ITI (Nearby),0.95
+Thondamuthur,Unskilled (Agro-processing),Unit-attached Housing,High (4000+ workers),Assam,Processing Unit Quarters,None (Agro-Corridor),Areca nut / Agro-Industrial,Govt Arts & Science,0.82
+Peelamedu,Skilled (Mechanical),Ribbon Development / Historic,Very High,Local Mixed / Technical,High-density MSME residential,Red Line (Planned),Auto Components / Engineering,PSG Tech / CIT,0.98
+Saravanampatti,Skilled (Digital),White-collar Settlements,Very High,Mixed (Rising Tech-Migrant),Modern Apartments / PGs,Green Line (Planned),IT & Technology Hub,Sankara Poly / Vaagai Kalvi,0.92
+Vellalore,Mixed (Commuter),Resettlement Site,Very High,TNUHDB Resettled Households,TNUHDB Tenements / Govt Housing,Pink Line (Planned),Logistics / Bus Terminus,Plastic Mould CFC,0.88
+Valparai,Unskilled (Plantation),Estate Quarters,Medium (3000+ workers),Assam / West Bengal,On-estate Quarters,None (Hill Area),Tea & Coffee Estates,None,0.65
+Karumathampatti,Unskilled / Semi-Skilled,Mill-attached Hostels,High,Odisha / West Bengal,Textile Mill Hostels,Red Line (Planned),Textile & Logistics Hub,Nanjappa ITI,0.85
+Malumichampatti,Semi-Skilled (Technician),Concentrated Industrial,High,Bihar / UP,Private Dormitories,Yellow Line (Planned),Foundries & MSME,Govt Music College,0.87
+Kurumbapalayam,Semi-Skilled (Foundry),Established Migrant Colony,High,Bihar,Community Integrated Housing,Green Line (Planned),Foundry Cluster,Adithya Tech,0.84
+Arasur,Mixed (Manufacturing),Emerging Industrial,Medium,Odisha / Local,New Mill-attached Quarters,Red Line (Planned),EV & Defense,Arulmigu Chandikeswarar Poly,0.8
+Singanallur,Semi-Skilled (Textile),Ribbon Development,Very High,Odisha / West Bengal,Historic Residential / Slums,Blue Line (Planned),Textile Machinery,CIT Sandwich Poly,0.9
+Thudiyalur,Skilled / Semi-Skilled,MSME Hub,High,Local / Rural-Urban Migrants,Plotted Residential Zones,Yellow Line (Planned),Pumps & Motors,SRMV Poly,0.89
+Neelambur,Unskilled (Logistics),Peripheral Logistics Node,Medium,Odisha / Assam,Highway-edge Informal,Red Line (Planned),Logistics & Warehousing,Transport Corridor Hub,0.78
+Athipalayam,Skilled Professionals,New Educational Hub,Medium,Local / Student Migrants,Plotted Labor Zones,None (Emerging),Educational / IT Hub,Sri Ranganathar Poly,0.75
+Vadavalli,Skilled Professionals,Premium Residential,Medium,Local,G-Square Plotted / Villas,Green Line (Planned),Institutional / Agro-Tech Hub,VLB Janaki Ammal Poly,0.72
