@@ -4,6 +4,7 @@ import numpy as np
 import re
 import os
 import pydeck as pdk
+import requests
 
 st.set_page_config(page_title="CBE Industrial Intelligence Engine",
                    layout="wide", initial_sidebar_state="expanded", page_icon="🏭")
@@ -107,8 +108,42 @@ div[data-testid="stTextInput"] input:focus{border-color:#38bdf8!important;box-sh
 div[data-testid="stTextInput"] input::placeholder{color:#2a4060!important;}
 .stExpander{border:1px solid #162035!important;border-radius:12px!important;background:#0b1526!important;}
 hr{border-color:#0f1d30!important;margin:1.5rem 0!important;}
+
+/* Google Maps panel styles */
+.gmaps-panel{background:linear-gradient(135deg,#080f1e,#0b1829);border:1px solid #1a3a6a;
+  border-radius:16px;padding:1.4rem 1.6rem;margin:1rem 0;position:relative;overflow:hidden;}
+.gmaps-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,#4285f4,#34a853,#fbbc05,#ea4335);}
+.gmaps-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.58rem;letter-spacing:4px;
+  color:#4285f4;text-transform:uppercase;margin-bottom:0.8rem;}
+.place-card{background:#060f1e;border:1px solid #0c2040;border-radius:10px;
+  padding:0.7rem 1rem;margin:0.4rem 0;display:flex;align-items:flex-start;gap:10px;}
+.place-name{font-family:'Syne',sans-serif;font-size:0.85rem;font-weight:600;color:#dde3f0;}
+.place-meta{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#4a6080;margin-top:2px;}
+.place-dist{font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#38bdf8;
+  background:#0c2240;border:1px solid #1e4a7a;border-radius:4px;padding:2px 7px;white-space:nowrap;margin-left:auto;}
+.cat-header{font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:#34d399;
+  letter-spacing:3px;text-transform:uppercase;margin:0.8rem 0 0.4rem;display:flex;align-items:center;gap:6px;}
+.drive-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0.8rem 0;}
+.drive-card{background:#060f1e;border:1px solid #0c2040;border-radius:10px;padding:0.8rem;text-align:center;}
+.drive-label{font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:#4285f4;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:0.3rem;}
+.drive-val{font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:700;color:#fff;}
+.drive-unit{font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:#4a6080;margin-top:2px;}
+.no-key-box{background:#0b1526;border:1px dashed #1e4080;border-radius:12px;padding:1.2rem 1.5rem;
+  text-align:center;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#2a4060;margin:1rem 0;}
+.reverse-place{background:#060f1e;border:1px solid #0c2040;border-radius:10px;
+  padding:0.6rem 1rem;margin:0.3rem 0;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#7a90b0;}
+.reverse-place strong{color:#dde3f0;}
+.insight-box{background:linear-gradient(135deg,#050e1c,#070f1a);border:1px solid #0c2a50;
+  border-left:3px solid #4285f4;border-radius:10px;padding:1rem 1.2rem;margin-top:0.8rem;
+  font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#6a85a8;line-height:1.8;}
+.insight-box strong{color:#38bdf8;}
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── GOOGLE MAPS API KEY ──────────────────────────────────────────────────────────
+GOOGLE_MAPS_API_KEY = "AIzaSyD7imxilq1bYpXLU5EEz_C9aLS94tSnkso"
 
 # ── CONSTANTS ────────────────────────────────────────────────────────────────────
 AIRPORT = (11.0305, 77.0435)
@@ -152,31 +187,42 @@ INDUSTRY_DNA = {
         "weights": {"Power":0.30,"Airport":0.15,"Water":0.05,"Ecosystem":0.25,"Workforce":0.15,"Incentive":0.10},
         "keywords": ["engineering","foundry","machine","tool","fabricat","casting","forge","metal","machining","pump"],
         "workforce_match": ["Semi-Skilled (Industrial)","Skilled (Mechanical)","Semi-Skilled (Foundry)","Semi-Skilled (Technician)"],
-        "icon": "⚙️", "desc": "Power reliability, engineering cluster, skilled workforce"
+        "icon": "⚙️", "desc": "Power reliability, engineering cluster, skilled workforce",
+        # Google Places types to search for this industry
+        "places_types": ["factory","storage","hardware_store","electrician"],
+        "places_keywords": ["machine shop","metal fabrication","foundry","engineering","industrial supplier"],
     },
     "Food Processing": {
         "weights": {"Power":0.08,"Airport":0.07,"Water":0.35,"Ecosystem":0.25,"Workforce":0.15,"Incentive":0.10},
         "keywords": ["food","agro","dairy","grain","mill","spice","rice","flour","packaging","beverage"],
         "workforce_match": ["Unskilled (Agro-processing)","Unskilled / Semi-Skilled"],
-        "icon": "🌾", "desc": "Water proximity critical; agro workforce and cluster valued"
+        "icon": "🌾", "desc": "Water proximity critical; agro workforce and cluster valued",
+        "places_types": ["storage","food","grocery_or_supermarket"],
+        "places_keywords": ["cold storage","agro processing","food packaging","flour mill","rice mill"],
     },
     "Logistics & Warehouse": {
         "weights": {"Power":0.07,"Airport":0.28,"Water":0.05,"Ecosystem":0.20,"Workforce":0.12,"Incentive":0.08},
         "keywords": [],
         "workforce_match": ["Unskilled (Logistics)","Mixed (Commuter)"],
-        "icon": "📦", "desc": "Airport, ICD dry port, highway connectivity are primary"
+        "icon": "📦", "desc": "Airport, ICD dry port, highway connectivity are primary",
+        "places_types": ["storage","moving_company","transit_station"],
+        "places_keywords": ["warehouse","freight","logistics","transport","courier","cargo"],
     },
     "Textile / Garments": {
         "weights": {"Power":0.20,"Airport":0.08,"Water":0.15,"Ecosystem":0.30,"Workforce":0.17,"Incentive":0.10},
         "keywords": ["textile","yarn","weav","garment","spinning","knit","dyeing","bleach","apparel","cotton"],
         "workforce_match": ["Semi-Skilled (Textile)","Unskilled / Semi-Skilled"],
-        "icon": "🧵", "desc": "Textile cluster, water for dyeing, garment workforce"
+        "icon": "🧵", "desc": "Textile cluster, water for dyeing, garment workforce",
+        "places_types": ["clothing_store","factory","laundry"],
+        "places_keywords": ["textile","spinning mill","garment","yarn","dyeing","weaving"],
     },
     "Electronics / EV": {
         "weights": {"Power":0.25,"Airport":0.28,"Water":0.07,"Ecosystem":0.15,"Workforce":0.15,"Incentive":0.10},
         "keywords": ["electronics","auto","ev","electric","battery","semicon","pcb","motor","component","tech"],
         "workforce_match": ["Skilled (Digital)","Mixed (Manufacturing)","Skilled Professionals"],
-        "icon": "⚡", "desc": "Airport for exports, reliable power, tech-skilled workforce"
+        "icon": "⚡", "desc": "Airport for exports, reliable power, tech-skilled workforce",
+        "places_types": ["electronics_store","factory","car_repair"],
+        "places_keywords": ["electronics","EV","battery","components","PCB","motor winding"],
     },
 }
 
@@ -194,6 +240,636 @@ DIM_TO_COL = {
     "airport":"airport_dist","power":"power_dist","water":"water_dist",
     "railway":"rail_dist","sidco":"sidco_dist","highway":"highway_dist","icd":"icd_dist",
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GOOGLE MAPS API HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_gmaps_key():
+    """Return the Google Maps API key from the global variable."""
+    return GOOGLE_MAPS_API_KEY
+
+
+def gmaps_nearby_search(lat, lon, keyword, radius=8000, api_key=""):
+    """
+    Call Google Places Nearby Search API.
+    Returns list of place dicts with name, vicinity, rating, distance.
+    """
+    if not api_key:
+        return []
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    params = {
+        "location": f"{lat},{lon}",
+        "radius": radius,
+        "keyword": keyword,
+        "key": api_key,
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=8)
+        data = resp.json()
+        places = []
+        for p in data.get("results", [])[:6]:
+            plat = p["geometry"]["location"]["lat"]
+            plon = p["geometry"]["location"]["lng"]
+            dist_km = haversine(lat, lon, plat, plon)
+            places.append({
+                "name": p.get("name", "Unknown"),
+                "vicinity": p.get("vicinity", ""),
+                "rating": p.get("rating", None),
+                "dist_km": dist_km,
+                "lat": plat,
+                "lon": plon,
+                "types": p.get("types", []),
+            })
+        # Sort by distance
+        places.sort(key=lambda x: x["dist_km"])
+        return places
+    except Exception:
+        return []
+
+
+def gmaps_distance_matrix(origin_lat, origin_lon, destinations, api_key=""):
+    """
+    Call Google Distance Matrix API to get drive times from origin to multiple destinations.
+    destinations: list of (lat, lon, label) tuples
+    Returns list of dicts with label, distance_text, duration_text, duration_seconds
+    """
+    if not api_key or not destinations:
+        return []
+    origin = f"{origin_lat},{origin_lon}"
+    dest_str = "|".join([f"{d[0]},{d[1]}" for d in destinations])
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+    params = {
+        "origins": origin,
+        "destinations": dest_str,
+        "mode": "driving",
+        "key": api_key,
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        data = resp.json()
+        results = []
+        rows = data.get("rows", [{}])
+        elements = rows[0].get("elements", []) if rows else []
+        for i, el in enumerate(elements):
+            label = destinations[i][2] if i < len(destinations) else f"Dest {i+1}"
+            if el.get("status") == "OK":
+                results.append({
+                    "label": label,
+                    "distance_text": el["distance"]["text"],
+                    "duration_text": el["duration"]["text"],
+                    "duration_seconds": el["duration"]["value"],
+                })
+            else:
+                results.append({
+                    "label": label,
+                    "distance_text": "N/A",
+                    "duration_text": "N/A",
+                    "duration_seconds": 9999,
+                })
+        return results
+    except Exception:
+        return []
+
+
+def gmaps_reverse_geocode(lat, lon, api_key=""):
+    """Get a human-readable address for coordinates."""
+    if not api_key:
+        return ""
+    url = "https://maps.googleapis.com/maps/api/geocode/json"
+    params = {"latlng": f"{lat},{lon}", "key": api_key}
+    try:
+        resp = requests.get(url, params=params, timeout=6)
+        data = resp.json()
+        results = data.get("results", [])
+        if results:
+            return results[0].get("formatted_address", "")
+        return ""
+    except Exception:
+        return ""
+
+
+def render_ecosystem_scan(lat, lon, industry, api_key):
+    """Render the Live Ecosystem Scan panel for a given coordinate."""
+    dna = INDUSTRY_DNA[industry]
+    keywords_list = dna.get("places_keywords", [])
+
+    st.markdown(f"""
+<div class="gmaps-panel">
+  <div class="gmaps-eyebrow">🛰️ Live Ecosystem Scan · Google Places API · {industry}</div>
+""", unsafe_allow_html=True)
+
+    if not api_key:
+        st.markdown("""
+<div class="no-key-box">
+  ⚙️ Set your Google Maps API key in the <code>GOOGLE_MAPS_API_KEY</code> variable at the top of <code>app.py</code> to activate live scans.
+</div>
+""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    all_places = []
+    seen = set()
+
+    with st.spinner("Scanning live business ecosystem via Google Places…"):
+        for kw in keywords_list[:4]:  # limit API calls
+            places = gmaps_nearby_search(lat, lon, kw, radius=8000, api_key=api_key)
+            for p in places:
+                if p["name"] not in seen:
+                    seen.add(p["name"])
+                    p["search_kw"] = kw
+                    all_places.append(p)
+
+    if not all_places:
+        st.markdown('<div class="no-key-box">No businesses found nearby via Places API. Check your API key or try a different location.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    # Group by keyword category
+    kw_groups = {}
+    for p in all_places:
+        kw = p["search_kw"]
+        kw_groups.setdefault(kw, []).append(p)
+
+    col1, col2 = st.columns(2)
+    group_items = list(kw_groups.items())
+
+    for gi, (kw, places) in enumerate(group_items):
+        target_col = col1 if gi % 2 == 0 else col2
+        with target_col:
+            st.markdown(f'<div class="cat-header">📍 {kw.title()} ({len(places)} found)</div>', unsafe_allow_html=True)
+            for p in places[:3]:
+                rating_str = f"⭐ {p['rating']}" if p['rating'] else "No rating"
+                st.markdown(f"""
+<div class="place-card">
+  <div style="flex:1;">
+    <div class="place-name">{p['name']}</div>
+    <div class="place-meta">{p['vicinity']} · {rating_str}</div>
+  </div>
+  <div class="place-dist">{p['dist_km']:.1f} km</div>
+</div>""", unsafe_allow_html=True)
+
+    # Ecosystem insight summary
+    total = len(all_places)
+    cluster_label = "Strong cluster" if total >= 10 else "Emerging cluster" if total >= 4 else "Sparse / greenfield"
+    closest = min(all_places, key=lambda x: x["dist_km"])
+
+    st.markdown(f"""
+<div class="insight-box">
+  <strong>Ecosystem Summary:</strong> {total} relevant businesses found within 8 km ·
+  Cluster strength: <strong>{cluster_label}</strong><br>
+  Closest match: <strong>{closest['name']}</strong> at {closest['dist_km']:.1f} km ·
+  Industry fit: <strong>{industry}</strong>
+</div>
+""", unsafe_allow_html=True)
+
+    # Add live places to map
+    if all_places:
+        places_df = pd.DataFrame([{
+            "lat": p["lat"], "lon": p["lon"],
+            "label": f"📍 {p['name']} ({p['dist_km']:.1f}km)",
+            "color": [255, 215, 0, 220], "radius": 160
+        } for p in all_places[:20]])
+        st.session_state["live_places_df"] = places_df
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_drive_times(lat, lon, api_key, substations, icd_points, highway_coords, highway_junctions):
+    """Render real drive times to key infrastructure using Distance Matrix API."""
+    st.markdown("""
+<div class="gmaps-panel">
+  <div class="gmaps-eyebrow">🚗 Real Drive Times · Google Distance Matrix API</div>
+""", unsafe_allow_html=True)
+
+    if not api_key:
+        st.markdown('<div class="no-key-box">API key required for real drive times.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    destinations = [
+        (AIRPORT[0], AIRPORT[1], "✈️ Coimbatore Airport"),
+    ]
+    # Nearest substation
+    if substations:
+        sub_dists = [(haversine(lat, lon, s[0], s[1]), s[0], s[1], KNOWN_SUBSTATIONS[i][2])
+                     for i, s in enumerate(substations)]
+        nearest_sub = min(sub_dists, key=lambda x: x[0])
+        destinations.append((nearest_sub[1], nearest_sub[2], f"⚡ {nearest_sub[3]}"))
+
+    # Nearest ICD
+    if icd_points:
+        icd_sorted = sorted(icd_points, key=lambda p: haversine(lat, lon, p[0], p[1]))
+        destinations.append((icd_sorted[0][0], icd_sorted[0][1], f"🚢 {icd_sorted[0][2]}"))
+
+    # Nearest highway junction
+    if highway_coords and highway_junctions:
+        hw_sorted = sorted(
+            [(haversine(lat, lon, c[0], c[1]), c, highway_junctions[i])
+             for i, c in enumerate(highway_coords) if i < len(highway_junctions)],
+            key=lambda x: x[0]
+        )
+        if hw_sorted:
+            destinations.append((hw_sorted[0][1][0], hw_sorted[0][1][1], f"🛣️ {hw_sorted[0][2]}"))
+
+    with st.spinner("Fetching real drive times from Google…"):
+        results = gmaps_distance_matrix(lat, lon, destinations, api_key=api_key)
+
+    if not results:
+        st.markdown('<div class="no-key-box">Could not fetch drive times. Check API key and Distance Matrix API is enabled.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    drive_cards = ""
+    for r in results:
+        drive_cards += f"""
+<div class="drive-card">
+  <div class="drive-label">{r['label']}</div>
+  <div class="drive-val">{r['duration_text']}</div>
+  <div class="drive-unit">{r['distance_text']}</div>
+</div>"""
+
+    st.markdown(f'<div class="drive-grid">{drive_cards}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#1a3050;margin-top:0.5rem;">'
+        'Real road travel times · Driving mode · Google Distance Matrix API</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def generate_industry_insight(findings, industry, logistics, water_dist, power_dist, workforce_score):
+    """
+    Convert raw API signals into industry-specific reasoning.
+    Returns (why_list, challenges_list).
+    """
+    dna = INDUSTRY_DNA.get(industry, {})
+    why = []
+    challenges = []
+
+    # ── Cluster strength from Places findings ────────────────────────────────
+    total_places = sum(len(v) for v in findings.values())
+    if total_places >= 10:
+        cluster_label = "Strong"
+        cluster_note  = f"{total_places} relevant businesses detected within scan radius"
+    elif total_places >= 5:
+        cluster_label = "Moderate"
+        cluster_note  = f"{total_places} supporting businesses found — growing ecosystem"
+    else:
+        cluster_label = "Weak / Greenfield"
+        cluster_note  = f"Only {total_places} relevant units nearby — early-mover territory"
+
+    # ── Logistics signals ────────────────────────────────────────────────────
+    airport_time  = next((r for r in logistics if "Airport" in r["label"]), None)
+    icd_time      = next((r for r in logistics if "ICD" in r["label"]), None)
+    highway_time  = next((r for r in logistics if "Junction" in r["label"] or "Highway" in r["label"]), None)
+
+    airport_mins  = airport_time["duration_seconds"] // 60 if airport_time and airport_time["duration_seconds"] != 9999 else 9999
+    icd_mins      = icd_time["duration_seconds"] // 60    if icd_time    and icd_time["duration_seconds"]    != 9999 else 9999
+    highway_mins  = highway_time["duration_seconds"] // 60 if highway_time and highway_time["duration_seconds"] != 9999 else 9999
+
+    # ── Industry-specific reasoning ──────────────────────────────────────────
+    if industry == "Food Processing":
+        # Water is king
+        if water_dist < 2:
+            why.append(f"Exceptional water proximity ({water_dist:.1f} km) — critical for processing, cleaning & boiler ops")
+        elif water_dist < 6:
+            why.append(f"Reliable water access ({water_dist:.1f} km) — supports daily production requirements")
+        else:
+            challenges.append(f"Water body is {water_dist:.1f} km away — piping/borewell investment likely needed")
+
+        if cluster_label == "Strong":
+            why.append(f"Strong agro-processing cluster — {cluster_note}; vendor network & cold-chain already present")
+        elif cluster_label == "Moderate":
+            why.append(f"Emerging food cluster — {cluster_note}; room to anchor the local supply chain")
+        else:
+            challenges.append(f"Sparse ecosystem — {cluster_note}; raw material procurement may depend on long hauls")
+
+        if highway_mins < 15:
+            why.append(f"Fast highway access (~{highway_mins} min) — efficient farm-to-factory logistics")
+        elif highway_mins < 30:
+            why.append(f"Moderate highway connectivity (~{highway_mins} min drive) — manageable inbound logistics")
+        else:
+            challenges.append(f"Highway is ~{highway_mins} min away — transportation costs for perishables will be elevated")
+
+        if workforce_score > 0.7:
+            why.append("High availability of semi-skilled agro-processing labour in the zone")
+        elif workforce_score > 0.5:
+            why.append("Adequate unskilled / semi-skilled workforce for production lines")
+        else:
+            challenges.append("Workforce density is low — labour recruitment may require incentives or housing")
+
+        challenges.append("Seasonal dependency on raw materials — storage or diversification strategy needed")
+        if cluster_label == "Strong":
+            challenges.append("Labour competition is higher in dense food clusters — wage pressure expected")
+        challenges.append("Water scarcity risk during dry seasons — rainwater harvesting or ETP planning required")
+
+    elif industry == "Precision Engineering":
+        if power_dist < 3:
+            why.append(f"Substation within {power_dist:.1f} km — low latency power access for CNC & heat-treatment ops")
+        elif power_dist < 7:
+            why.append(f"Power substation at {power_dist:.1f} km — reliable supply for precision machinery")
+        else:
+            challenges.append(f"Substation is {power_dist:.1f} km away — voltage fluctuation risk; DG backup essential")
+
+        if cluster_label in ("Strong", "Moderate"):
+            why.append(f"Engineering cluster active — {cluster_note}; tooling, sub-contractors & raw stock accessible locally")
+        else:
+            challenges.append(f"Weak engineering ecosystem — {cluster_note}; supply chain must be built from scratch")
+
+        if airport_mins < 25:
+            why.append(f"Airport within ~{airport_mins} min — supports precision export shipments & import of raw stock")
+        else:
+            challenges.append(f"Airport access is ~{airport_mins} min — longer turnaround on time-sensitive exports")
+
+        if workforce_score > 0.7:
+            why.append("Strong presence of skilled mechanical / ITI-trained workforce in the area")
+        else:
+            challenges.append("Skilled workforce (machinist, fabricator) may be scarce — training partnerships needed")
+
+        challenges.append("Power outages during peak demand can damage precision tooling mid-cycle — UPS/AVR critical")
+        challenges.append("Cluster competition for skilled labour may push attrition rates higher")
+
+    elif industry == "Logistics & Warehouse":
+        if highway_mins < 10:
+            why.append(f"Exceptional highway connectivity (~{highway_mins} min) — ideal for multi-hub distribution")
+        elif highway_mins < 20:
+            why.append(f"Good highway access (~{highway_mins} min) — viable for regional distribution operations")
+        else:
+            challenges.append(f"Highway is ~{highway_mins} min away — increases last-mile and hub turnaround time")
+
+        if airport_mins < 20:
+            why.append(f"Airport reachable in ~{airport_mins} min — supports air freight & express cargo ops")
+        elif airport_mins < 40:
+            why.append(f"Airport accessible in ~{airport_mins} min — suitable for scheduled cargo runs")
+        else:
+            challenges.append(f"Airport ~{airport_mins} min away — air freight logistics cost will be above benchmark")
+
+        if icd_mins < 20:
+            why.append(f"ICD Dry Port within ~{icd_mins} min — direct customs clearance; reduces dwell time significantly")
+        elif icd_mins < 40:
+            why.append(f"ICD accessible in ~{icd_mins} min — viable for container movements")
+        else:
+            challenges.append(f"ICD is ~{icd_mins} min drive — container logistics add to transit cost")
+
+        if cluster_label in ("Strong", "Moderate"):
+            why.append(f"Supporting logistics ecosystem — {cluster_note}; freight brokers, packers & FTL operators nearby")
+        else:
+            challenges.append(f"Thin logistics cluster — {cluster_note}; limited co-loading or 3PL partnerships locally")
+
+        challenges.append("Land cost appreciation near highway nodes — lease rates may rise with demand")
+        challenges.append("Driver fatigue regulations and toll costs on long-haul routes need route optimisation")
+
+    elif industry == "Textile / Garments":
+        if water_dist < 3:
+            why.append(f"Water source within {water_dist:.1f} km — essential for dyeing, bleaching & finishing ops")
+        elif water_dist < 8:
+            why.append(f"Water access at {water_dist:.1f} km — feasible for textile wet-processing with piping investment")
+        else:
+            challenges.append(f"Water body {water_dist:.1f} km away — wet-process units will face high water-procurement cost")
+
+        if power_dist < 5:
+            why.append(f"Power substation at {power_dist:.1f} km — supports spinning, weaving & loom electricity demand")
+        else:
+            challenges.append(f"Substation {power_dist:.1f} km away — power cost & reliability risk for continuous looms")
+
+        if cluster_label == "Strong":
+            why.append(f"Strong textile cluster — {cluster_note}; yarn suppliers, embroidery units & job-workers nearby")
+        elif cluster_label == "Moderate":
+            why.append(f"Emerging textile ecosystem — {cluster_note}; vendor development possible over short term")
+        else:
+            challenges.append(f"Weak textile cluster — {cluster_note}; full backward integration required")
+
+        if workforce_score > 0.65:
+            why.append("Adequate semi-skilled textile workforce (stitching, knitting, quality check) available")
+        else:
+            challenges.append("Textile skill gap present — tailoring & quality-control training will be necessary")
+
+        challenges.append("Effluent treatment (ETP) is mandatory for dyeing units — compliance cost is significant")
+        challenges.append("Cotton price volatility can impact margins — raw material hedging strategy needed")
+        challenges.append("Labour-intensive operations face disruption from seasonal festival-related absenteeism")
+
+    elif industry == "Electronics / EV":
+        if airport_mins < 20:
+            why.append(f"Airport in ~{airport_mins} min — critical for PCB/component imports & export of finished goods")
+        elif airport_mins < 35:
+            why.append(f"Airport ~{airport_mins} min away — usable for scheduled air-cargo cycles")
+        else:
+            challenges.append(f"Airport ~{airport_mins} min away — time-sensitive supply chains will face disruption risk")
+
+        if power_dist < 3:
+            why.append(f"Substation within {power_dist:.1f} km — stable clean power for sensitive electronics assembly")
+        elif power_dist < 6:
+            why.append(f"Power at {power_dist:.1f} km — adequate with surge protection and UPS systems")
+        else:
+            challenges.append(f"Substation {power_dist:.1f} km away — power quality risk for PCB & EV battery assembly")
+
+        if cluster_label in ("Strong", "Moderate"):
+            why.append(f"Electronics/EV ecosystem forming — {cluster_note}; component vendors & EMS players accessible")
+        else:
+            challenges.append(f"Greenfield for electronics — {cluster_note}; component supply chain must be entirely imported")
+
+        if workforce_score > 0.7:
+            why.append("Skilled / diploma-level technical workforce available — suitable for SMT & EV assembly lines")
+        else:
+            challenges.append("Technical skill gap — ITI/polytechnic graduates need targeted hiring; training cost high")
+
+        challenges.append("ESD-sensitive operations require controlled environment investment (cleanroom, humidity control)")
+        challenges.append("Battery logistics (for EV) classified as hazardous — special transport compliance required")
+
+    else:
+        # Generic fallback
+        if cluster_label != "Weak / Greenfield":
+            why.append(f"Active industrial ecosystem — {cluster_note}")
+        else:
+            challenges.append(f"Sparse ecosystem — {cluster_note}")
+        if highway_mins < 20:
+            why.append(f"Good highway connectivity (~{highway_mins} min)")
+        if power_dist < 5:
+            why.append(f"Power infrastructure within {power_dist:.1f} km")
+        if water_dist < 5:
+            why.append(f"Water body within {water_dist:.1f} km")
+        challenges.append("Industry-specific infrastructure requirements should be assessed on-site")
+
+    return why, challenges
+
+
+def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
+    """
+    Render the Reverse Location Analysis panel.
+    If company_row is provided, uses its coordinates automatically (no manual input).
+    Generates industry-specific reasoning using Industry DNA.
+    """
+    st.markdown("""
+<div class="gmaps-panel">
+  <div class="gmaps-eyebrow">🔍 Reverse Location Analysis · Industry-Specific Site Intelligence</div>
+""", unsafe_allow_html=True)
+
+    if not api_key:
+        st.markdown('<div class="no-key-box">API key required for reverse location analysis.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    # ── Coordinate source: auto from company row OR manual input ─────────────
+    if company_row is not None:
+        r_lat = float(company_row["lat"])
+        r_lon = float(company_row["lon"])
+        st.markdown(
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#34d399;margin-bottom:0.6rem;">'
+            f'📌 Using parcel coordinates: <strong>{r_lat:.5f}, {r_lon:.5f}</strong></div>',
+            unsafe_allow_html=True
+        )
+    else:
+        col_lat, col_lon = st.columns(2)
+        with col_lat:
+            r_lat = st.number_input("Latitude", value=11.054, format="%.5f", key="rev_lat",
+                                    help="Paste the latitude of a competitor plant or industry location")
+        with col_lon:
+            r_lon = st.number_input("Longitude", value=77.068, format="%.5f", key="rev_lon",
+                                    help="Paste the longitude of a competitor plant or industry location")
+
+    scan_radius = st.slider("Search radius (km)", 2, 20, 10, key="rev_radius")
+    rev_industry = selected_industry  # passed from caller; falls back to None
+
+    if st.button("🔍 Analyse This Location", key="rev_btn"):
+        with st.spinner(f"Reverse-engineering site selection logic for {rev_industry or 'this industry'}…"):
+
+            # Geocode
+            address = gmaps_reverse_geocode(r_lat, r_lon, api_key)
+
+            # Industry-specific keyword categories
+            dna_local = INDUSTRY_DNA.get(rev_industry, {})
+            ind_keywords = dna_local.get("places_keywords", [])
+            base_categories = [
+                ("freight & logistics", "freight logistics transport"),
+                ("raw material vendors", "industrial supplier raw material"),
+                ("labour & workforce", "industrial workers labour contractor"),
+                ("fuel & utilities", "fuel station diesel"),
+            ]
+            # Add industry-specific keyword searches
+            ind_categories = [(kw, kw) for kw in ind_keywords[:3]]
+            search_categories = base_categories + ind_categories
+
+            findings = {}
+            for cat_label, kw in search_categories:
+                places = gmaps_nearby_search(r_lat, r_lon, kw, radius=scan_radius * 1000, api_key=api_key)
+                if places:
+                    findings[cat_label] = places[:3]
+
+            # Drive times to CBE infrastructure
+            infra_dests = [
+                (AIRPORT[0], AIRPORT[1], "✈️ Airport"),
+                (11.016, 77.016, "🚢 ICD Irugur"),
+                (11.063, 76.975, "🛣️ Neelambur Junction"),
+            ]
+            drive_results = gmaps_distance_matrix(r_lat, r_lon, infra_dests, api_key=api_key)
+
+            # Straight-line water & power distances for reasoning
+            water_d = min_dist(r_lat, r_lon,
+                               list(zip(water["latitude"], water["longitude"]))) \
+                      if water is not None and not water.empty else 8.0
+            power_d = min_dist(r_lat, r_lon, substations) if substations else 5.0
+
+            # Workforce proxy: use nearest parcel's score if available
+            wf_score = 0.55
+            if not df.empty:
+                nearest_idx = df.apply(lambda r: haversine(r_lat, r_lon, r["lat"], r["lon"]), axis=1).idxmin()
+                wf_score = df.loc[nearest_idx, "workforce_score"] if "workforce_score" in df.columns else 0.55
+
+        # ── Display address ───────────────────────────────────────────────────
+        if address:
+            st.markdown(
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#38bdf8;margin:0.5rem 0;">'
+                f'📌 {address}</div>', unsafe_allow_html=True)
+
+        # ── Infrastructure drive times ─────────────────────────────────────────
+        if drive_results:
+            st.markdown('<div class="cat-header">🏗️ Infrastructure Accessibility</div>', unsafe_allow_html=True)
+            drive_cards = "".join([
+                f'<div class="drive-card"><div class="drive-label">{r["label"]}</div>'
+                f'<div class="drive-val">{r["duration_text"]}</div>'
+                f'<div class="drive-unit">{r["distance_text"]}</div></div>'
+                for r in drive_results
+            ])
+            st.markdown(f'<div class="drive-grid">{drive_cards}</div>', unsafe_allow_html=True)
+
+        # ── Ecosystem findings ─────────────────────────────────────────────────
+        if findings:
+            st.markdown('<div class="cat-header">🧩 Ecosystem Signals Detected</div>', unsafe_allow_html=True)
+            for cat, places in findings.items():
+                nearest = places[0]
+                st.markdown(f"""
+<div class="reverse-place">
+  ✦ <strong>{cat.title()}</strong> — {nearest['name']} is {nearest['dist_km']:.1f} km away
+  <span style="color:#2a4060;"> · {nearest['vicinity']}</span>
+</div>""", unsafe_allow_html=True)
+
+        # ── Cluster score banner ───────────────────────────────────────────────
+        total_places = sum(len(v) for v in findings.values())
+        if total_places >= 10:
+            cluster_col, cluster_txt = "#34d399", f"Strong Cluster · {total_places} relevant units"
+        elif total_places >= 5:
+            cluster_col, cluster_txt = "#fbbf24", f"Moderate Cluster · {total_places} units found"
+        else:
+            cluster_col, cluster_txt = "#fb923c", f"Weak / Greenfield · {total_places} units found"
+
+        st.markdown(
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:{cluster_col};'
+            f'background:#060f1e;border:1px solid {cluster_col}40;border-radius:8px;padding:0.5rem 1rem;'
+            f'margin:0.6rem 0;">🏭 Cluster Strength: <strong>{cluster_txt}</strong></div>',
+            unsafe_allow_html=True
+        )
+
+        # ── Industry-Specific Insight ──────────────────────────────────────────
+        if rev_industry:
+            why_list, challenge_list = generate_industry_insight(
+                findings, rev_industry, drive_results, water_d, power_d, wf_score
+            )
+
+            why_html = "".join(
+                f'<div class="reasoning-row">'
+                f'<div class="reasoning-dot dot-green"></div>'
+                f'<span style="color:#c8d8f0;">{point}</span></div>'
+                for point in why_list
+            )
+            challenge_html = "".join(
+                f'<div class="reasoning-row">'
+                f'<div class="reasoning-dot dot-orange"></div>'
+                f'<span style="color:#c8d8f0;">{point}</span></div>'
+                for point in challenge_list
+            )
+
+            ind_icon = INDUSTRY_DNA.get(rev_industry, {}).get("icon", "🏭")
+            st.markdown(f"""
+<div class="reasoning-card" style="margin-top:1rem;border-left-color:#34d399;">
+  <div style="font-family:JetBrains Mono,monospace;font-size:0.62rem;color:#34d399;
+       letter-spacing:3px;text-transform:uppercase;margin-bottom:0.8rem;">
+    {ind_icon} {rev_industry} · Industry-Specific Analysis
+  </div>
+
+  <div class="reasoning-section">🧠 Why This Location Works</div>
+  {why_html if why_html else '<div class="reasoning-row"><span style="color:#4a6080;">Insufficient data to generate strengths — try increasing scan radius.</span></div>'}
+
+  <div class="reasoning-section" style="margin-top:1rem;">⚠️ Challenges</div>
+  {challenge_html if challenge_html else '<div class="reasoning-row"><span style="color:#4a6080;">No challenges flagged at this scan radius.</span></div>'}
+</div>""", unsafe_allow_html=True)
+        else:
+            # Generic fallback if no industry selected
+            reasons = list(findings.keys())
+            insight = f"This location appears chosen for: {', '.join(reasons[:3])}. "
+            insight += ("Mature ecosystem suggests deliberate clustering." if len(findings) >= 3
+                        else "Emerging ecosystem — early mover advantage likely.")
+            st.markdown(f'<div class="insight-box"><strong>Site Selection Insight:</strong> {insight}</div>',
+                        unsafe_allow_html=True)
+
+        if not findings:
+            st.markdown(
+                '<div class="no-key-box">No significant ecosystem found at this radius. '
+                'Try increasing the scan radius or verify coordinates.</div>',
+                unsafe_allow_html=True
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── UTILS ────────────────────────────────────────────────────────────────────────
@@ -396,7 +1072,7 @@ def load_all():
         if not sidco.empty: sidco=sidco.rename(columns={"_lat":"latitude","_lon":"longitude"})
     except Exception as e: problems.append(f"SIDCO: {e}")
 
-    # Highway junctions — first token before comma is the name
+    # Highway junctions
     highway_junctions, highway_coords = [], []
     try:
         with open("Highway_junctions.csv","r",encoding="utf-8") as f:
@@ -466,7 +1142,7 @@ def load_all():
 st.title("CBE Industrial Intelligence Engine")
 st.markdown('<p style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#38bdf850;'
             'letter-spacing:2px;margin-top:-0.3rem;">'
-            'LAND · INFRASTRUCTURE · ECOSYSTEM · WORKFORCE · INCENTIVES · INDUSTRY LOGIC</p>',
+            'LAND · INFRASTRUCTURE · ECOSYSTEM · WORKFORCE · INCENTIVES · INDUSTRY LOGIC · LIVE MAPS</p>',
             unsafe_allow_html=True)
 
 with st.spinner("🔄 Loading all intelligence layers…"):
@@ -481,6 +1157,9 @@ if problems:
 if land is None or land.empty:
     st.error("❌ Cannot load empty_land.csv."); st.stop()
 
+# Load API key once
+GMAPS_KEY = get_gmaps_key()
+
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -488,7 +1167,7 @@ with st.sidebar:
                 'background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;'
                 '-webkit-text-fill-color:transparent;">⬡ CBE Engine</div>', unsafe_allow_html=True)
     st.markdown('<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#2a4060;'
-                'letter-spacing:2px;margin-bottom:1rem;">INDUSTRIAL SITE INTELLIGENCE v3</div>', unsafe_allow_html=True)
+                'letter-spacing:2px;margin-bottom:1rem;">INDUSTRIAL SITE INTELLIGENCE v4 · MAPS EDITION</div>', unsafe_allow_html=True)
     st.divider()
 
     st.markdown('<span class="sidebar-label">Industry Type</span>', unsafe_allow_html=True)
@@ -527,10 +1206,17 @@ with st.sidebar:
         ("ICD / Dry Port",     f"{len(icd_points)} depot(s)",                 len(icd_points)>0),
         ("Workforce Zones",    f"{len(workforce_df)} areas",                  not workforce_df.empty),
         ("Incentive Blocks",   f"{len(incentive_df)} blocks",                 not incentive_df.empty),
+        ("Google Maps API",    "Connected" if GMAPS_KEY else "No key set",    bool(GMAPS_KEY)),
     ]:
         dot = "🟢" if ok else "🔴"
         st.markdown(f'<div class="stat-row"><span class="stat-label">{dot} {name}</span>'
                     f'<span class="stat-val">{count}</span></div>', unsafe_allow_html=True)
+
+    if not GMAPS_KEY:
+        st.divider()
+        st.markdown('<span class="sidebar-label">Google Maps Key</span>', unsafe_allow_html=True)
+        st.caption("Set in `app.py` at the top:")
+        st.code('GOOGLE_MAPS_API_KEY = "your-key-here"', language="python")
 
 
 # ── SEARCH BAR ────────────────────────────────────────────────────────────────────
@@ -871,6 +1557,99 @@ with col_right:
 st.divider()
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── GOOGLE MAPS INTELLIGENCE SECTION ──────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+st.markdown('<div class="section-header"><span class="section-icon">🛰️</span>'
+            '<span class="section-title">Google Maps Intelligence</span><div class="section-line"></div></div>',
+            unsafe_allow_html=True)
+
+gmaps_tab1, gmaps_tab2, gmaps_tab3 = st.tabs([
+    "📍 Live Ecosystem Scan",
+    "🚗 Real Drive Times",
+    "🔍 Reverse Location Analysis",
+])
+
+with gmaps_tab1:
+    st.markdown(
+        '<div style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:#4a6080;margin-bottom:1rem;">'
+        'Scans Google Places API in real time to find what businesses are actually operating near the top-ranked site. '
+        'Upgrades your static ecosystem score with live data.</div>',
+        unsafe_allow_html=True
+    )
+
+    # Parcel selector
+    parcel_names = df[area_col].tolist()
+    selected_parcel = st.selectbox(
+        "Select parcel to scan",
+        parcel_names,
+        index=0,
+        key="eco_scan_parcel",
+        help="Defaults to the top-ranked parcel"
+    )
+    scan_row = df[df[area_col] == selected_parcel].iloc[0]
+    scan_lat, scan_lon = scan_row["lat"], scan_row["lon"]
+
+    st.caption(f"📌 Coordinates: {scan_lat:.5f}, {scan_lon:.5f}")
+
+    if st.button("🛰️ Run Live Ecosystem Scan", key="eco_scan_btn"):
+        render_ecosystem_scan(scan_lat, scan_lon, industry, GMAPS_KEY)
+
+with gmaps_tab2:
+    st.markdown(
+        '<div style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:#4a6080;margin-bottom:1rem;">'
+        'Replaces straight-line (haversine) distances with real road travel times to key infrastructure. '
+        'A site 4km as the crow flies could be 25 min by road — this tells you the truth.</div>',
+        unsafe_allow_html=True
+    )
+
+    dt_parcel = st.selectbox(
+        "Select parcel for drive times",
+        parcel_names,
+        index=0,
+        key="dt_parcel",
+    )
+    dt_row = df[df[area_col] == dt_parcel].iloc[0]
+    dt_lat, dt_lon = dt_row["lat"], dt_row["lon"]
+    st.caption(f"📌 Coordinates: {dt_lat:.5f}, {dt_lon:.5f}")
+
+    if st.button("🚗 Get Real Drive Times", key="dt_btn"):
+        render_drive_times(dt_lat, dt_lon, GMAPS_KEY, substations, icd_points, highway_coords, highway_junctions)
+
+with gmaps_tab3:
+    st.markdown(
+        '<div style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:#4a6080;margin-bottom:1rem;">'
+        'Select any ranked parcel below — the engine will automatically use its coordinates to reverse-engineer '
+        'why that location was chosen, using <strong style="color:#38bdf8;">industry-specific reasoning</strong> '
+        f'tuned for <strong style="color:#818cf8;">{industry}</strong>.</div>',
+        unsafe_allow_html=True
+    )
+
+    rev_mode = st.radio(
+        "Analysis mode",
+        ["📋 Use a ranked parcel (auto coordinates)", "📍 Enter coordinates manually"],
+        key="rev_mode",
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+
+    if rev_mode.startswith("📋"):
+        rev_parcel = st.selectbox(
+            "Select parcel to analyse",
+            parcel_names,
+            index=0,
+            key="rev_parcel_select",
+            help="Coordinates are pulled automatically from the dataset"
+        )
+        rev_row = df[df[area_col] == rev_parcel].iloc[0]
+        st.caption(f"📌 Coordinates locked: {rev_row['lat']:.5f}, {rev_row['lon']:.5f}")
+        render_reverse_analysis(GMAPS_KEY, company_row=rev_row, selected_industry=industry)
+    else:
+        render_reverse_analysis(GMAPS_KEY, company_row=None, selected_industry=industry)
+
+st.divider()
+
+
 # ── MAP ───────────────────────────────────────────────────────────────────────────
 st.markdown('<div class="section-header"><span class="section-icon">🗺️</span>'
             '<span class="section-title">Site Intelligence Map</span><div class="section-line"></div></div>',
@@ -934,6 +1713,12 @@ if highway_coords:
                        "color":[255,140,0,200],"radius":220} for i,c in enumerate(highway_coords)])
     layers.append(pdk.Layer("ScatterplotLayer",data=hm,get_position="[lon,lat]",get_color="color",get_radius="radius",pickable=True))
 
+# ── Live Places layer (from ecosystem scan if run) ────────────────────────────
+if "live_places_df" in st.session_state and not st.session_state["live_places_df"].empty:
+    layers.append(pdk.Layer("ScatterplotLayer",
+        data=st.session_state["live_places_df"],
+        get_position="[lon,lat]",get_color="color",get_radius="radius",pickable=True))
+
 tooltip={"html":'<div style="font-family:JetBrains Mono,monospace;font-size:11px;background:#0b1526;'
                 'color:#dde3f0;border:1px solid #1e4080;border-radius:8px;padding:10px 14px;'
                 'max-width:380px;line-height:1.7;">{label}</div>',
@@ -955,9 +1740,10 @@ st.markdown("""
   <div class="legend-item"><div class="legend-dot" style="background:#14b4e6;opacity:0.7;"></div>Water Bodies</div>
   <div class="legend-item"><div class="legend-dot" style="background:#50ff8c;"></div>ICD Dry Port</div>
   <div class="legend-item"><div class="legend-dot" style="background:#ff8c00;"></div>Highway Junctions</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffd700;"></div>Live Places (Maps)</div>
 </div>
 <div style="font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#2a4060;margin-top:0.5rem;">
-  Hover any marker · Winner has glow ring · 10 intelligence layers active
+  Hover any marker · Winner has glow ring · 11 intelligence layers active · Google Maps live layer when scanned
 </div>""", unsafe_allow_html=True)
 
 st.divider()
@@ -983,6 +1769,6 @@ with st.expander("📋 Full Ranked Data Table (All Parcels)"):
 st.markdown("""
 <div style="text-align:center;margin-top:2rem;padding:1rem;font-family:JetBrains Mono,monospace;
 font-size:0.62rem;color:#1a2840;letter-spacing:2px;">
-CBE INDUSTRIAL INTELLIGENCE ENGINE v3 · 10 DATA LAYERS ·
-LAND × INFRASTRUCTURE × ECOSYSTEM × WORKFORCE × INCENTIVES × ICD × INDUSTRY LOGIC
+CBE INDUSTRIAL INTELLIGENCE ENGINE v4 · 11 DATA LAYERS · GOOGLE MAPS EDITION ·
+LAND × INFRASTRUCTURE × ECOSYSTEM × WORKFORCE × INCENTIVES × ICD × INDUSTRY LOGIC × LIVE PLACES × DRIVE TIMES
 </div>""", unsafe_allow_html=True)
