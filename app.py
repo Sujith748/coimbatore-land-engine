@@ -11,133 +11,271 @@ st.set_page_config(page_title="CBE Industrial Intelligence Engine",
 
 st.markdown("""
 <style>
+/* ═══════════════════════════════════════════════════════════════════
+   LANDS & LANDS · INDUSTRIAL INTELLIGENCE ENGINE
+   Brand palette: Deep Navy (#080d1a) · Gold (#c9a84c) · Copper (#a07840)
+   White (#f0ece4) · Muted gold text (#7a6a40)
+   ═══════════════════════════════════════════════════════════════════ */
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-html,body,[class*="css"]{font-family:'Syne',sans-serif;background:#060b18;color:#dde3f0;}
-.main{background:#060b18;}.block-container{padding-top:1.5rem!important;max-width:1400px;}
-section[data-testid="stSidebar"]{background:linear-gradient(180deg,#0b1526,#060b18);border-right:1px solid #162035;}
+
+/* ── BRAND TOKENS ─────────────────────────────────────────────── */
+:root {
+  --gold:       #c9a84c;
+  --gold-light: #e2c97a;
+  --gold-dim:   #7a6030;
+  --gold-glow:  #c9a84c30;
+  --copper:     #a07840;
+  --navy:       #080d1a;
+  --navy-2:     #0c1220;
+  --navy-3:     #101828;
+  --navy-border:#1e2a3a;
+  --navy-card:  #0d1525;
+  --cream:      #e8e0d0;
+  --text-dim:   #6a7080;
+  --text-mid:   #a0a8b8;
+  --green:      #4ade80;
+  --amber:      #fbbf24;
+  --red:        #f87171;
+}
+
+html,body,[class*="css"]{font-family:'Syne',sans-serif;background:var(--navy);color:var(--cream);}
+.main{background:var(--navy);}.block-container{padding-top:1.5rem!important;max-width:1400px;}
+section[data-testid="stSidebar"]{background:linear-gradient(180deg,var(--navy-2),var(--navy));border-right:1px solid #1a2030;}
 h1{font-family:'Syne',sans-serif!important;font-weight:800!important;font-size:2rem!important;
-   background:linear-gradient(100deg,#38bdf8,#818cf8,#f472b6);-webkit-background-clip:text;
+   background:linear-gradient(100deg,var(--gold-light),var(--gold),var(--copper));-webkit-background-clip:text;
    -webkit-text-fill-color:transparent;background-clip:text;letter-spacing:-0.5px;margin-bottom:0!important;}
-h2,h3{font-family:'Syne',sans-serif!important;font-weight:700!important;color:#c8d8f0!important;}
-.search-wrapper{background:linear-gradient(135deg,#0b1a2e,#0d1f38);border:1px solid #1e4080;
-  border-radius:14px;padding:1.2rem 1.5rem;margin-bottom:0.8rem;box-shadow:0 4px 24px #0066ff12;}
-.search-title{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#38bdf8;
+h2,h3{font-family:'Syne',sans-serif!important;font-weight:700!important;color:var(--cream)!important;}
+
+/* ── SEARCH ──────────────────────────────────────────────────── */
+.search-wrapper{background:linear-gradient(135deg,var(--navy-2),var(--navy-3));border:1px solid var(--gold-dim);
+  border-radius:14px;padding:1.2rem 1.5rem;margin-bottom:0.8rem;box-shadow:0 4px 24px #c9a84c08;}
+.search-title{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--gold);
   letter-spacing:3px;text-transform:uppercase;margin-bottom:0.5rem;}
-.search-examples{font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#475a7a;line-height:1.9;margin-top:0.5rem;}
-.search-examples span{color:#38bdf8;}
+.search-examples{font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#475060;line-height:1.9;margin-top:0.5rem;}
+.search-examples span{color:var(--gold);}
+
+/* ── PILLS ───────────────────────────────────────────────────── */
 .pill-row{display:flex;flex-wrap:wrap;gap:6px;margin:0.6rem 0;}
 .pill{display:inline-flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;
   font-size:0.68rem;padding:4px 12px;border-radius:20px;letter-spacing:0.5px;}
-.pill-ok{background:#052e20;color:#34d399;border:1px solid #065f46;}
-.pill-warn{background:#2d1500;color:#fb923c;border:1px solid #7c2d12;}
-.pill-info{background:#0c1d3e;color:#60a5fa;border:1px solid #1e40af;}
-.winner-card{background:linear-gradient(135deg,#091522,#0d1e35,#091522);border:1px solid #1e4a7a;
+.pill-ok{background:#0d2a14;color:#4ade80;border:1px solid #1e5028;}
+.pill-warn{background:#2a1400;color:#fbbf24;border:1px solid #7c4a00;}
+.pill-info{background:#1a1200;color:var(--gold);border:1px solid var(--gold-dim);}
+
+/* ── WINNER CARD ─────────────────────────────────────────────── */
+.winner-card{background:linear-gradient(135deg,#0a1018,#0e1a28,#0a1018);border:1px solid #2a2010;
   border-radius:20px;padding:2rem 2.2rem;margin:1.5rem 0;position:relative;overflow:hidden;
-  box-shadow:0 0 60px #0066ff0d,0 8px 32px #00000040;}
+  box-shadow:0 0 60px #c9a84c08,0 8px 32px #00000050;}
 .winner-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,#38bdf8,#818cf8,#f472b6,#38bdf8);}
+  background:linear-gradient(90deg,var(--gold-dim),var(--gold),var(--gold-light),var(--gold),var(--gold-dim));}
 .winner-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:4px;
-  color:#38bdf8;text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:8px;}
+  color:var(--gold);text-transform:uppercase;margin-bottom:0.6rem;display:flex;align-items:center;gap:8px;}
 .winner-eyebrow::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;
-  background:#38bdf8;box-shadow:0 0 8px #38bdf8;}
+  background:var(--gold);box-shadow:0 0 10px var(--gold);}
 .winner-name{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;color:#fff;line-height:1.1;margin-bottom:0.3rem;}
-.winner-meta{font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#4a6080;}
-.winner-score{font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#38bdf8;
-  background:#0c2240;border:1px solid #1e4a7a;border-radius:6px;padding:2px 10px;margin-left:12px;}
+.winner-meta{font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:var(--text-dim);}
+.winner-score{font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:var(--gold);
+  background:#1a1400;border:1px solid var(--gold-dim);border-radius:6px;padding:2px 10px;margin-left:12px;}
+
+/* ── METRIC GRID ─────────────────────────────────────────────── */
 .metric-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin:1.2rem 0;}
-.metric-card{background:#0b1526;border:1px solid #162035;border-radius:12px;padding:0.75rem 0.5rem;text-align:center;}
+.metric-card{background:var(--navy-card);border:1px solid var(--navy-border);border-radius:12px;padding:0.75rem 0.5rem;text-align:center;}
 .metric-icon{font-size:1.1rem;margin-bottom:0.2rem;}
-.metric-label{font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:#38bdf8;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:0.3rem;}
+.metric-label{font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:0.3rem;}
 .metric-value{font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:700;color:#fff;line-height:1;}
-.metric-unit{font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:#4a6080;margin-top:0.1rem;}
-.metric-status-g{color:#34d399;font-size:0.58rem;margin-top:0.1rem;font-family:'JetBrains Mono',monospace;}
-.metric-status-y{color:#fbbf24;font-size:0.58rem;margin-top:0.1rem;font-family:'JetBrains Mono',monospace;}
-.metric-status-r{color:#f87171;font-size:0.58rem;margin-top:0.1rem;font-family:'JetBrains Mono',monospace;}
-.reasoning-card{background:#0b1526;border:1px solid #162035;border-left:3px solid #818cf8;
+.metric-unit{font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--text-dim);margin-top:0.1rem;}
+.metric-status-g{color:var(--green);font-size:0.58rem;margin-top:0.1rem;font-family:'JetBrains Mono',monospace;}
+.metric-status-y{color:var(--amber);font-size:0.58rem;margin-top:0.1rem;font-family:'JetBrains Mono',monospace;}
+.metric-status-r{color:var(--red);font-size:0.58rem;margin-top:0.1rem;font-family:'JetBrains Mono',monospace;}
+
+/* ── REASONING CARD ──────────────────────────────────────────── */
+.reasoning-card{background:var(--navy-card);border:1px solid var(--navy-border);border-left:3px solid var(--gold-dim);
   border-radius:12px;padding:1.4rem 1.6rem;margin-top:0.5rem;}
-.reasoning-section{font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:#38bdf8;
+.reasoning-section{font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--gold);
   letter-spacing:2px;text-transform:uppercase;margin:1rem 0 0.5rem;}
 .reasoning-section:first-child{margin-top:0;}
 .reasoning-row{display:flex;align-items:flex-start;gap:10px;padding:0.35rem 0;
-  border-bottom:1px solid #0f1d30;font-family:'JetBrains Mono',monospace;font-size:0.76rem;color:#7a90b0;}
+  border-bottom:1px solid #141c28;font-family:'JetBrains Mono',monospace;font-size:0.76rem;color:var(--text-mid);}
 .reasoning-row:last-child{border-bottom:none;}
 .reasoning-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:5px;}
-.dot-green{background:#34d399;box-shadow:0 0 6px #34d399;}
-.dot-yellow{background:#fbbf24;box-shadow:0 0 6px #fbbf24;}
+.dot-green{background:var(--green);box-shadow:0 0 6px var(--green);}
+.dot-yellow{background:var(--amber);box-shadow:0 0 6px var(--amber);}
 .dot-orange{background:#fb923c;box-shadow:0 0 6px #fb923c;}
-.rval{color:#dde3f0;font-weight:600;}.rtag-g{color:#34d399;}.rtag-y{color:#fbbf24;}.rtag-o{color:#fb923c;}
-.rank-card{background:#0b1526;border:1px solid #162035;border-radius:14px;padding:1rem 1.2rem;
+.rval{color:var(--cream);font-weight:600;}.rtag-g{color:var(--green);}.rtag-y{color:var(--amber);}.rtag-o{color:#fb923c;}
+
+/* ── RANK CARDS ──────────────────────────────────────────────── */
+.rank-card{background:var(--navy-card);border:1px solid var(--navy-border);border-radius:14px;padding:1rem 1.2rem;
   margin-bottom:0.8rem;display:flex;align-items:flex-start;gap:1rem;transition:border-color 0.2s;}
-.rank-card:hover{border-color:#1e4080;}
-.rank-card.rank-1{border-color:#f472b630;background:linear-gradient(90deg,#1a0a1e,#0b1526);}
-.rank-number{font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;color:#1a2a40;width:2.2rem;flex-shrink:0;text-align:center;padding-top:2px;}
-.rank-card.rank-1 .rank-number{color:#f472b6;}
+.rank-card:hover{border-color:var(--gold-dim);}
+.rank-card.rank-1{border-color:#3a2a0a;background:linear-gradient(90deg,#120e04,var(--navy-card));}
+.rank-number{font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;color:#1a2030;width:2.2rem;flex-shrink:0;text-align:center;padding-top:2px;}
+.rank-card.rank-1 .rank-number{color:var(--gold);}
 .rank-info{flex:1;min-width:0;}
-.rank-name{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#dde3f0;}
-.rank-survey{font-family:'JetBrains Mono',monospace;font-size:0.66rem;color:#4a6080;margin-top:2px;}
+.rank-name{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--cream);}
+.rank-survey{font-family:'JetBrains Mono',monospace;font-size:0.66rem;color:var(--text-dim);margin-top:2px;}
 .rank-badges{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:6px;}
+
+/* ── BADGES ──────────────────────────────────────────────────── */
 .badge{font-family:'JetBrains Mono',monospace;font-size:0.6rem;padding:2px 7px;border-radius:4px;letter-spacing:0.4px;white-space:nowrap;}
-.b-eco{background:#052e20;color:#34d399;border:1px solid #065f46;}
-.b-pwr{background:#170f40;color:#818cf8;border:1px solid #2d2380;}
+.b-eco{background:#0d2014;color:#4ade80;border:1px solid #1e4028;}
+.b-pwr{background:#1a1200;color:var(--gold-light);border:1px solid var(--gold-dim);}
 .b-air{background:#1c1000;color:#fb923c;border:1px solid #7c3500;}
-.b-rail{background:#0a1828;color:#38bdf8;border:1px solid #0c3060;}
-.b-water{background:#001a2e;color:#22d3ee;border:1px solid #0c4060;}
-.b-wf{background:#1a1000;color:#fbbf24;border:1px solid #7c5000;}
-.b-inc{background:#1a0a1e;color:#f472b6;border:1px solid #7c2f6e;}
-.b-icd{background:#001a10;color:#4ade80;border:1px solid #065f30;}
-.b-hwy{background:#1a1000;color:#ff8c00;border:1px solid #7c4000;}
+.b-rail{background:#0a1420;color:#93c5fd;border:1px solid #1e3060;}
+.b-water{background:#001820;color:#67e8f9;border:1px solid #0c3a48;}
+.b-wf{background:#1a1200;color:var(--amber);border:1px solid #7c5000;}
+.b-inc{background:#1a1000;color:var(--gold);border:1px solid var(--gold-dim);}
+.b-icd{background:#001810;color:#86efac;border:1px solid #1a5030;}
+.b-hwy{background:#1a1200;color:#fdba74;border:1px solid #7c4000;}
+
+/* ── MAP LEGEND ──────────────────────────────────────────────── */
 .map-legend{display:flex;flex-wrap:wrap;gap:12px;padding:0.8rem 1.2rem;
-  background:#0b1526;border:1px solid #162035;border-radius:10px;margin-top:0.8rem;}
-.legend-item{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#6a80a0;}
+  background:var(--navy-card);border:1px solid var(--navy-border);border-radius:10px;margin-top:0.8rem;}
+.legend-item{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:var(--text-dim);}
 .legend-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;}
-.sidebar-label{font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:#38bdf8;
+
+/* ── SIDEBAR ─────────────────────────────────────────────────── */
+.sidebar-label{font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--gold);
   letter-spacing:3px;text-transform:uppercase;margin-bottom:0.5rem;margin-top:0.8rem;display:block;}
 .stat-row{display:flex;justify-content:space-between;align-items:center;padding:0.28rem 0;
-  border-bottom:1px solid #0f1d30;font-family:'JetBrains Mono',monospace;font-size:0.68rem;}
-.stat-label{color:#4a6080;}.stat-val{color:#dde3f0;font-weight:600;}
+  border-bottom:1px solid #141c28;font-family:'JetBrains Mono',monospace;font-size:0.68rem;}
+.stat-label{color:var(--text-dim);}.stat-val{color:var(--cream);font-weight:600;}
+
+/* ── SECTION HEADER ──────────────────────────────────────────── */
 .section-header{display:flex;align-items:center;gap:12px;margin:1.8rem 0 1rem;}
 .section-icon{font-size:1.1rem;}
-.section-title{font-family:'Syne',sans-serif;font-size:1.15rem;font-weight:700;color:#c8d8f0;}
-.section-line{flex:1;height:1px;background:linear-gradient(90deg,#162035,transparent);}
-.parse-box{background:#060f1e;border:1px solid #0c3060;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:1.2rem;}
-.parse-header{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#38bdf8;letter-spacing:3px;text-transform:uppercase;margin-bottom:0.6rem;}
-.parse-note{font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:#2a4060;margin-top:0.5rem;}
-[data-testid="stMetric"]{background:#0b1526!important;border:1px solid #162035!important;border-radius:12px!important;padding:0.8rem!important;}
-div[data-testid="stTextInput"] input{background:#0b1526!important;border:1px solid #1e4080!important;border-radius:10px!important;color:#dde3f0!important;font-family:'JetBrains Mono',monospace!important;font-size:0.85rem!important;padding:0.7rem 1rem!important;}
-div[data-testid="stTextInput"] input:focus{border-color:#38bdf8!important;box-shadow:0 0 0 2px #38bdf820!important;}
-div[data-testid="stTextInput"] input::placeholder{color:#2a4060!important;}
-.stExpander{border:1px solid #162035!important;border-radius:12px!important;background:#0b1526!important;}
-hr{border-color:#0f1d30!important;margin:1.5rem 0!important;}
+.section-title{font-family:'Syne',sans-serif;font-size:1.15rem;font-weight:700;color:var(--cream);}
+.section-line{flex:1;height:1px;background:linear-gradient(90deg,var(--gold-dim),transparent);}
 
-/* Google Maps panel styles */
-.gmaps-panel{background:linear-gradient(135deg,#080f1e,#0b1829);border:1px solid #1a3a6a;
+/* ── PARSE BOX ───────────────────────────────────────────────── */
+.parse-box{background:#0c1018;border:1px solid var(--gold-dim);border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:1.2rem;}
+.parse-header{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--gold);letter-spacing:3px;text-transform:uppercase;margin-bottom:0.6rem;}
+.parse-note{font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:#2a3040;margin-top:0.5rem;}
+
+/* ── STREAMLIT OVERRIDES ─────────────────────────────────────── */
+[data-testid="stMetric"]{background:var(--navy-card)!important;border:1px solid var(--navy-border)!important;border-radius:12px!important;padding:0.8rem!important;}
+div[data-testid="stTextInput"] input{background:var(--navy-card)!important;border:1px solid var(--gold-dim)!important;border-radius:10px!important;color:var(--cream)!important;font-family:'JetBrains Mono',monospace!important;font-size:0.85rem!important;padding:0.7rem 1rem!important;}
+div[data-testid="stTextInput"] input:focus{border-color:var(--gold)!important;box-shadow:0 0 0 2px #c9a84c20!important;}
+div[data-testid="stTextInput"] input::placeholder{color:#2a3040!important;}
+.stExpander{border:1px solid var(--navy-border)!important;border-radius:12px!important;background:var(--navy-card)!important;}
+hr{border-color:#141c28!important;margin:1.5rem 0!important;}
+
+/* ── GOOGLE MAPS PANELS ──────────────────────────────────────── */
+.gmaps-panel{background:linear-gradient(135deg,#0a1018,#0c1520);border:1px solid #2a2010;
   border-radius:16px;padding:1.4rem 1.6rem;margin:1rem 0;position:relative;overflow:hidden;}
 .gmaps-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,#4285f4,#34a853,#fbbc05,#ea4335);}
+  background:linear-gradient(90deg,var(--gold-dim),var(--gold),var(--gold-light),var(--gold),var(--gold-dim));}
 .gmaps-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.58rem;letter-spacing:4px;
-  color:#4285f4;text-transform:uppercase;margin-bottom:0.8rem;}
-.place-card{background:#060f1e;border:1px solid #0c2040;border-radius:10px;
+  color:var(--gold);text-transform:uppercase;margin-bottom:0.8rem;}
+.place-card{background:#0a1018;border:1px solid #1a2030;border-radius:10px;
   padding:0.7rem 1rem;margin:0.4rem 0;display:flex;align-items:flex-start;gap:10px;}
-.place-name{font-family:'Syne',sans-serif;font-size:0.85rem;font-weight:600;color:#dde3f0;}
-.place-meta{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#4a6080;margin-top:2px;}
-.place-dist{font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#38bdf8;
-  background:#0c2240;border:1px solid #1e4a7a;border-radius:4px;padding:2px 7px;white-space:nowrap;margin-left:auto;}
-.cat-header{font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:#34d399;
+.place-name{font-family:'Syne',sans-serif;font-size:0.85rem;font-weight:600;color:var(--cream);}
+.place-meta{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--text-dim);margin-top:2px;}
+.place-dist{font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:var(--gold);
+  background:#1a1200;border:1px solid var(--gold-dim);border-radius:4px;padding:2px 7px;white-space:nowrap;margin-left:auto;}
+.cat-header{font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--gold);
   letter-spacing:3px;text-transform:uppercase;margin:0.8rem 0 0.4rem;display:flex;align-items:center;gap:6px;}
 .drive-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0.8rem 0;}
-.drive-card{background:#060f1e;border:1px solid #0c2040;border-radius:10px;padding:0.8rem;text-align:center;}
-.drive-label{font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:#4285f4;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:0.3rem;}
+.drive-card{background:#0a1018;border:1px solid #1a2030;border-radius:10px;padding:0.8rem;text-align:center;}
+.drive-label{font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:var(--gold);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:0.3rem;}
 .drive-val{font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:700;color:#fff;}
-.drive-unit{font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:#4a6080;margin-top:2px;}
-.no-key-box{background:#0b1526;border:1px dashed #1e4080;border-radius:12px;padding:1.2rem 1.5rem;
-  text-align:center;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#2a4060;margin:1rem 0;}
-.reverse-place{background:#060f1e;border:1px solid #0c2040;border-radius:10px;
-  padding:0.6rem 1rem;margin:0.3rem 0;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#7a90b0;}
-.reverse-place strong{color:#dde3f0;}
-.insight-box{background:linear-gradient(135deg,#050e1c,#070f1a);border:1px solid #0c2a50;
-  border-left:3px solid #4285f4;border-radius:10px;padding:1rem 1.2rem;margin-top:0.8rem;
-  font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#6a85a8;line-height:1.8;}
-.insight-box strong{color:#38bdf8;}
+.drive-unit{font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:var(--text-dim);margin-top:2px;}
+.no-key-box{background:var(--navy-card);border:1px dashed var(--gold-dim);border-radius:12px;padding:1.2rem 1.5rem;
+  text-align:center;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#2a3040;margin:1rem 0;}
+.reverse-place{background:#0a1018;border:1px solid #1a2030;border-radius:10px;
+  padding:0.6rem 1rem;margin:0.3rem 0;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--text-mid);}
+.reverse-place strong{color:var(--cream);}
+.insight-box{background:linear-gradient(135deg,#09100e,#0a1210);border:1px solid #2a2010;
+  border-left:3px solid var(--gold-dim);border-radius:10px;padding:1rem 1.2rem;margin-top:0.8rem;
+  font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--text-dim);line-height:1.8;}
+.insight-box strong{color:var(--gold);}
+.company-card{background:linear-gradient(135deg,#0a1018,#0c1520);border:1px solid #2a2010;
+  border-radius:14px;padding:1.1rem 1.4rem;margin:0.6rem 0;position:relative;overflow:hidden;}
+.company-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--gold-dim),var(--gold),var(--copper),var(--gold-dim));}
+.company-name{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--cream);margin-bottom:0.2rem;}
+.company-meta{font-family:'JetBrains Mono',monospace;font-size:0.63rem;color:var(--text-dim);margin-top:2px;line-height:1.6;}
+.company-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:0.5rem;}
+.company-rank{font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--gold);
+  background:#1a1200;border:1px solid var(--gold-dim);border-radius:4px;padding:2px 8px;}
+.companies-header{font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--gold);
+  letter-spacing:3px;text-transform:uppercase;margin:1rem 0 0.5rem;display:flex;align-items:center;gap:8px;}
+
+/* ── NEW FEATURE CARDS ────────────────────────────────────────── */
+.wins-card{background:linear-gradient(135deg,#091208,#0b1a0c);border:1px solid #1e3a18;
+  border-left:3px solid #4ade80;border-radius:16px;padding:1.4rem 1.6rem;margin:1rem 0;position:relative;overflow:hidden;}
+.wins-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,#4ade80,var(--gold),#4ade80);}
+.wins-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:4px;
+  color:#4ade80;text-transform:uppercase;margin-bottom:0.8rem;}
+.wins-item{display:flex;align-items:flex-start;gap:10px;padding:0.4rem 0;
+  border-bottom:1px solid #0d1a0a;font-family:'JetBrains Mono',monospace;font-size:0.76rem;color:#90b890;}
+.wins-item:last-child{border-bottom:none;}
+.wins-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px #4ade80;flex-shrink:0;margin-top:5px;}
+
+.missing-card{background:linear-gradient(135deg,#180c04,#200e06);border:1px solid #5a2808;
+  border-left:3px solid #fb923c;border-radius:16px;padding:1.4rem 1.6rem;margin:1rem 0;position:relative;overflow:hidden;}
+.missing-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,#fb923c,var(--copper),#fb923c);}
+.missing-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:4px;
+  color:#fb923c;text-transform:uppercase;margin-bottom:0.8rem;}
+.missing-item{display:flex;align-items:flex-start;gap:10px;padding:0.4rem 0;
+  border-bottom:1px solid #200e06;font-family:'JetBrains Mono',monospace;font-size:0.76rem;color:#c89870;}
+.missing-item:last-child{border-bottom:none;}
+.missing-dot{width:7px;height:7px;border-radius:50%;background:#fb923c;box-shadow:0 0 8px #fb923c;flex-shrink:0;margin-top:5px;}
+
+.cluster-insight-card{background:linear-gradient(135deg,#0a1018,#0d1628);border:1px solid #2a2010;
+  border-left:3px solid var(--gold);border-radius:14px;padding:1.2rem 1.5rem;margin:1rem 0;position:relative;overflow:hidden;}
+.cluster-insight-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--gold-dim),var(--gold),var(--gold-light),var(--gold),var(--gold-dim));}
+.cluster-insight-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:4px;
+  color:var(--gold);text-transform:uppercase;margin-bottom:0.6rem;}
+.cluster-insight-text{font-family:'JetBrains Mono',monospace;font-size:0.76rem;color:var(--text-mid);line-height:1.9;}
+.cluster-stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0.8rem 0;}
+.cluster-stat{background:#0a1018;border:1px solid #1a2030;border-radius:8px;padding:0.6rem;text-align:center;}
+.cluster-stat-label{font-family:'JetBrains Mono',monospace;font-size:0.52rem;color:var(--text-dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:0.3rem;}
+.cluster-stat-val{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;color:var(--gold);}
+
+.compare-table-card{background:var(--navy-card);border:1px solid var(--navy-border);border-radius:16px;padding:1.4rem 1.6rem;margin:1rem 0;}
+.compare-header{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:3px;
+  color:var(--gold);text-transform:uppercase;margin-bottom:1rem;}
+.compare-table{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:0.72rem;}
+.compare-table th{color:var(--text-dim);font-weight:600;text-align:left;padding:0.5rem 0.8rem;
+  border-bottom:2px solid var(--navy-border);font-size:0.6rem;letter-spacing:1px;text-transform:uppercase;}
+.compare-table td{padding:0.55rem 0.8rem;border-bottom:1px solid #141c28;color:var(--cream);vertical-align:middle;}
+.compare-table tr:last-child td{border-bottom:none;}
+.compare-table tr.winner-row td{background:#0d1a0a;color:#4ade80;}
+.compare-val-best{color:#4ade80;font-weight:700;}
+.compare-val-mid{color:var(--amber);}
+.compare-val-worst{color:#fb923c;}
+.recommend-row{display:flex;gap:10px;margin-top:0.8rem;flex-wrap:wrap;}
+.recommend-pill{background:#0a1018;border:1px solid var(--gold-dim);border-radius:8px;padding:0.5rem 0.9rem;
+  font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:var(--text-mid);flex:1;min-width:180px;}
+.recommend-pill strong{color:var(--gold);display:block;margin-bottom:3px;}
+
+.decision-mode-card{background:linear-gradient(135deg,#0a1018,#0c1420);border:1px solid #3a2a08;
+  border-left:3px solid var(--gold);border-radius:14px;padding:1.2rem 1.5rem;margin:1rem 0;position:relative;overflow:hidden;}
+.decision-mode-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--gold-dim),var(--gold),var(--gold-light));}
+.decision-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:4px;
+  color:var(--gold);text-transform:uppercase;margin-bottom:0.5rem;}
+.decision-parsed{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:var(--text-mid);line-height:1.8;margin-top:0.5rem;}
+.decision-weight-bar{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+.decision-weight-label{font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--text-dim);width:90px;}
+.decision-weight-track{flex:1;background:var(--navy-card);border-radius:4px;height:5px;}
+
+.hidden-tradeoffs-card{background:linear-gradient(135deg,#120c08,#180e0a);border:1px solid #4a2808;
+  border-left:3px solid var(--copper);border-radius:12px;padding:1.1rem 1.4rem;margin:0.8rem 0;}
+.hidden-tradeoffs-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:3px;
+  color:var(--copper);text-transform:uppercase;margin-bottom:0.6rem;}
+.tradeoff-item{display:flex;align-items:flex-start;gap:8px;padding:0.3rem 0;
+  border-bottom:1px solid #180e0a;font-family:'JetBrains Mono',monospace;font-size:0.73rem;color:#a08060;}
+.tradeoff-item:last-child{border-bottom:none;}
+
+.conclusion-card{background:linear-gradient(135deg,#0a1018,#0c1420);border:1px solid #2a2010;
+  border-left:3px solid var(--gold-light);border-radius:12px;padding:1.1rem 1.4rem;margin:0.8rem 0;}
+.conclusion-eyebrow{font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:3px;
+  color:var(--gold-light);text-transform:uppercase;margin-bottom:0.5rem;}
+.conclusion-text{font-family:'JetBrains Mono',monospace;font-size:0.76rem;color:var(--text-mid);line-height:1.8;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -286,6 +424,44 @@ def gmaps_nearby_search(lat, lon, keyword, radius=8000, api_key=""):
         return places
     except Exception:
         return []
+
+
+def fetch_top_companies(lat, lon, industry, api_key):
+    """
+    Fetch real companies from Google Places API for a given industry.
+    Uses INDUSTRY_DNA[industry]["places_keywords"] to run multiple searches.
+    Returns top 10 deduplicated companies sorted by rating (desc) then distance (asc).
+    """
+    if not api_key:
+        return []
+
+    dna_entry = INDUSTRY_DNA.get(industry, {})
+    keywords_list = dna_entry.get("places_keywords", [])
+    if not keywords_list:
+        keywords_list = [industry.lower()]
+
+    all_companies = []
+    seen_names = set()
+
+    for kw in keywords_list[:3]:  # limit to 3 keywords to stay within API budget
+        places = gmaps_nearby_search(lat, lon, kw, radius=15000, api_key=api_key)
+        for p in places:
+            name_key = p["name"].strip().lower()
+            if name_key not in seen_names:
+                seen_names.add(name_key)
+                all_companies.append({
+                    "name": p["name"],
+                    "lat": p["lat"],
+                    "lon": p["lon"],
+                    "rating": p.get("rating") or 0.0,
+                    "vicinity": p.get("vicinity", ""),
+                    "dist_km": p["dist_km"],
+                    "search_kw": kw,
+                })
+
+    # Sort: rating descending, then distance ascending
+    all_companies.sort(key=lambda x: (-x["rating"], x["dist_km"]))
+    return all_companies[:10]
 
 
 def gmaps_distance_matrix(origin_lat, origin_lon, destinations, api_key=""):
@@ -694,6 +870,327 @@ def generate_industry_insight(findings, industry, logistics, water_dist, power_d
     return why, challenges
 
 
+# ── FEATURE 1 & 2: WHY THIS LAND WINS + WHAT'S MISSING ─────────────────────
+def compute_why_wins_and_missing(winner_row, all_parcels_df, industry, weights):
+    """
+    Dynamically compare winner against all parcels and the industry DNA thresholds.
+    Returns (strengths_list, missing_list).
+    """
+    dna = INDUSTRY_DNA.get(industry, {})
+    strengths = []
+    missing = []
+
+    # Thresholds for "ideal" per dimension
+    IDEAL = {
+        "water_dist": 2.0, "power_dist": 3.0, "highway_dist": 3.0,
+        "airport_dist": 10.0, "icd_dist": 5.0, "rail_dist": 5.0,
+    }
+    WEAK_THRESHOLDS = {
+        "water_dist": 8.0, "power_dist": 8.0, "highway_dist": 10.0,
+        "airport_dist": 20.0, "icd_dist": 15.0, "rail_dist": 15.0,
+    }
+    DIM_LABELS = {
+        "water_dist": "water body", "power_dist": "power substation",
+        "highway_dist": "highway junction", "airport_dist": "airport",
+        "icd_dist": "ICD dry port", "rail_dist": "railway station",
+        "ecosystem": "ecosystem density", "workforce_score": "workforce quality",
+        "incentive_score": "incentive score",
+    }
+
+    n = len(all_parcels_df)
+
+    # ── Distance-based comparisons (lower = better) ──────────────────────────
+    for col in ["water_dist", "power_dist", "highway_dist", "airport_dist", "icd_dist", "rail_dist"]:
+        if col not in winner_row.index or col not in all_parcels_df.columns:
+            continue
+        val = winner_row[col]
+        rank_among = int((all_parcels_df[col] >= val).sum())  # how many >= winner (higher=closer)
+        percentile = rank_among / n
+
+        weight_key = {"water_dist": "Water", "power_dist": "Power",
+                      "highway_dist": "Ecosystem", "airport_dist": "Airport",
+                      "icd_dist": "Ecosystem", "rail_dist": "Ecosystem"}.get(col, "Ecosystem")
+        w = weights.get(weight_key, 0.05)
+        label = DIM_LABELS[col]
+
+        if percentile >= 0.75 and w >= 0.07:
+            strengths.append(f"Closest to {label} among top parcels — {val:.1f} km (top {int((1-percentile)*100)+1}%)")
+        elif val > WEAK_THRESHOLDS.get(col, 20) and w >= 0.07:
+            missing.append(f"{label.title()} too far — {val:.1f} km (industry ideal: <{IDEAL.get(col, 5):.0f} km)")
+
+    # ── Ecosystem / cluster ──────────────────────────────────────────────────
+    if "ecosystem" in winner_row.index and "ecosystem" in all_parcels_df.columns:
+        eco_val = winner_row["ecosystem"]
+        eco_rank = int((all_parcels_df["ecosystem"] <= eco_val).sum()) / n
+        if eco_rank >= 0.75 and weights.get("Ecosystem", 0) >= 0.15:
+            strengths.append(f"Highest ecosystem density among shortlisted parcels — {int(eco_val)} cluster points")
+        elif eco_val < 2 and weights.get("Ecosystem", 0) >= 0.15:
+            missing.append("Weak cluster score — sparse industrial ecosystem; greenfield risk")
+
+    # ── Workforce ────────────────────────────────────────────────────────────
+    if "workforce_score" in winner_row.index and "workforce_score" in all_parcels_df.columns:
+        wf_val = winner_row["workforce_score"]
+        wf_rank = int((all_parcels_df["workforce_score"] <= wf_val).sum()) / n
+        if wf_rank >= 0.75:
+            strengths.append(f"Best workforce quality match — score {wf_val:.2f}/1.00 (top {int((1-wf_rank)*100)+1}%)")
+        elif wf_val < 0.45:
+            missing.append(f"Workforce score is weak ({wf_val:.2f}) — labour recruitment may be difficult")
+
+    # ── Incentive ────────────────────────────────────────────────────────────
+    if "incentive_score" in winner_row.index and "incentive_tier" in winner_row.index:
+        if str(winner_row.get("incentive_tier", "")).lower() == "backward":
+            strengths.append("Located in Backward Incentive Zone — maximum government subsidies available")
+        elif winner_row.get("incentive_score", 0) < 0.4:
+            missing.append("Standard incentive tier only — limited subsidy advantage vs backward zone alternatives")
+
+    # ── Industry-specific gap analysis vs DNA weights ─────────────────────────
+    priority_dim = max(weights, key=weights.get)  # e.g. "Water" for Food Processing
+    dim_col_map = {"Water": "water_dist", "Power": "power_dist", "Airport": "airport_dist"}
+    priority_col = dim_col_map.get(priority_dim)
+    if priority_col and priority_col in winner_row.index:
+        val = winner_row[priority_col]
+        if val > WEAK_THRESHOLDS.get(priority_col, 10):
+            if not any(priority_dim.lower() in m.lower() for m in missing):
+                missing.append(f"Top priority for {industry} is {priority_dim} access — {val:.1f} km is above recommended threshold")
+
+    # Deduplicate and trim
+    strengths = list(dict.fromkeys(strengths))[:5]
+    missing = list(dict.fromkeys(missing))[:4]
+
+    return strengths, missing
+
+
+# ── FEATURE 3: CLUSTER STRATEGY INSIGHT ─────────────────────────────────────
+def compute_cluster_strategy_insight(companies, winner_lat, winner_lon, industry,
+                                     substations, icd_points, highway_coords,
+                                     water_lat_lons):
+    """
+    Analyse fetched companies' locations vs key infrastructure.
+    Returns (stats_dict, insight_text).
+    """
+    if not companies:
+        return {}, ""
+
+    dists_highway, dists_water, dists_airport = [], [], []
+
+    for c in companies:
+        clat, clon = c["lat"], c["lon"]
+        # Highway
+        if highway_coords:
+            dh = min(haversine(clat, clon, h[0], h[1]) for h in highway_coords)
+            dists_highway.append(dh)
+        # Water
+        if water_lat_lons:
+            dw = min(haversine(clat, clon, w[0], w[1]) for w in water_lat_lons)
+            dists_water.append(dw)
+        # Airport
+        dists_airport.append(haversine(clat, clon, AIRPORT[0], AIRPORT[1]))
+
+    avg_hwy = sum(dists_highway) / len(dists_highway) if dists_highway else None
+    avg_water = sum(dists_water) / len(dists_water) if dists_water else None
+    avg_airport = sum(dists_airport) / len(dists_airport) if dists_airport else None
+    total_eco = len(companies)
+
+    stats = {
+        "avg_highway_km": avg_hwy,
+        "avg_water_km": avg_water,
+        "avg_airport_km": avg_airport,
+        "total_companies": total_eco,
+    }
+
+    # Generate narrative insight
+    lines = []
+    if avg_hwy is not None:
+        lines.append(f"Most {industry} companies are located within {avg_hwy:.1f} km of a highway junction")
+    if avg_water is not None:
+        if avg_water < 5:
+            lines.append(f"strong water proximity (avg {avg_water:.1f} km) suggests supply-chain-driven location logic")
+        else:
+            lines.append(f"water distance averages {avg_water:.1f} km — less critical for this cluster's operations")
+    if avg_airport is not None:
+        lines.append(f"average airport drive distance is {avg_airport:.1f} km")
+
+    if avg_hwy is not None and avg_water is not None:
+        if avg_water < 4 and avg_hwy < 8:
+            pattern = "dual-dependency pattern (water + highway) — consistent with supply-chain-driven site selection"
+        elif avg_hwy < 8:
+            pattern = "highway-first location logic — distribution speed and freight access dominate site decisions"
+        elif avg_water < 4:
+            pattern = "water-first location logic — process requirements (washing, cooling, boiling) govern site choice"
+        else:
+            pattern = "balanced location pattern — no single dominant infrastructure driver detected"
+        lines.append(f"indicating a {pattern}")
+
+    insight = (", ".join(lines[:2]).capitalize() + ". " + ". ".join(lines[2:])).strip(" .")
+    if insight:
+        insight += "."
+
+    return stats, insight
+
+
+# ── FEATURE 5: DECISION MODE PARSER ─────────────────────────────────────────
+DECISION_KEYWORDS = {
+    "export":       {"Airport": +0.12, "ICD": +0.08},
+    "export-driven":{"Airport": +0.12, "ICD": +0.08},
+    "air cargo":    {"Airport": +0.15},
+    "port":         {"ICD": +0.12},
+    "icd":          {"ICD": +0.10},
+    "manufacturing":{"Power": +0.10, "Ecosystem": +0.08},
+    "production":   {"Power": +0.08, "Water": +0.05},
+    "heavy industry":{"Power": +0.12, "Ecosystem": +0.08},
+    "agro":         {"Water": +0.15, "Ecosystem": +0.08},
+    "agri":         {"Water": +0.12},
+    "food":         {"Water": +0.15, "Ecosystem": +0.08},
+    "water":        {"Water": +0.12},
+    "power":        {"Power": +0.12},
+    "energy":       {"Power": +0.10},
+    "logistics":    {"Airport": +0.10, "ICD": +0.10, "Ecosystem": +0.05},
+    "warehouse":    {"Airport": +0.08, "ICD": +0.08},
+    "textile":      {"Water": +0.08, "Ecosystem": +0.10, "Workforce": +0.08},
+    "garment":      {"Water": +0.06, "Ecosystem": +0.10, "Workforce": +0.08},
+    "electronics":  {"Airport": +0.10, "Power": +0.08},
+    "ev":           {"Power": +0.10, "Airport": +0.08},
+    "labour":       {"Workforce": +0.12},
+    "workforce":    {"Workforce": +0.10},
+    "cost":         {"Incentive": +0.12, "Workforce": +0.06},
+    "cheap":        {"Incentive": +0.12},
+    "incentive":    {"Incentive": +0.15},
+    "subsidy":      {"Incentive": +0.12},
+}
+
+def parse_decision_mode(text):
+    """
+    Parse free-text decision intent into weight adjustments.
+    Returns (adjustments_dict, detected_keywords_list, narrative_str).
+    """
+    if not text or not text.strip():
+        return {}, [], ""
+    t = text.lower()
+    adjustments = {}
+    detected = []
+    for kw, deltas in DECISION_KEYWORDS.items():
+        if kw in t:
+            detected.append(kw)
+            for factor, delta in deltas.items():
+                adjustments[factor] = adjustments.get(factor, 0) + delta
+
+    narrative_parts = []
+    if "Airport" in adjustments and adjustments["Airport"] > 0.08:
+        narrative_parts.append("boosting Airport weight (export/air-freight priority)")
+    if "ICD" in adjustments and adjustments["ICD"] > 0.06:
+        narrative_parts.append("boosting ICD weight (container/port logistics)")
+    if "Power" in adjustments and adjustments["Power"] > 0.07:
+        narrative_parts.append("increasing Power weight (manufacturing/heavy ops)")
+    if "Water" in adjustments and adjustments["Water"] > 0.07:
+        narrative_parts.append("raising Water weight (process/agro requirements)")
+    if "Incentive" in adjustments and adjustments["Incentive"] > 0.08:
+        narrative_parts.append("maximising Incentive weight (cost-sensitive strategy)")
+    if "Workforce" in adjustments and adjustments["Workforce"] > 0.07:
+        narrative_parts.append("prioritising Workforce quality")
+    if "Ecosystem" in adjustments and adjustments["Ecosystem"] > 0.06:
+        narrative_parts.append("strengthening Ecosystem cluster weight")
+
+    narrative = "Decision Mode active — " + ", ".join(narrative_parts) if narrative_parts else ""
+    return adjustments, detected, narrative
+
+
+def apply_decision_weights(base_weights, adjustments):
+    """Merge decision mode adjustments into the industry base weights (normalised)."""
+    merged = dict(base_weights)
+    for k, delta in adjustments.items():
+        if k in merged:
+            merged[k] = min(merged[k] + delta, 0.55)
+    # Renormalise to sum = 1
+    total = sum(merged.values())
+    if total > 0:
+        merged = {k: v / total for k, v in merged.items()}
+    return merged
+
+
+# ── FEATURE 6 HELPERS: UPGRADED REVERSE ANALYSIS ────────────────────────────
+def generate_hidden_tradeoffs(industry, water_dist, power_dist, airport_mins,
+                               icd_mins, highway_mins, cluster_label, workforce_score):
+    """Generate hidden trade-offs not obvious from surface-level analysis."""
+    tradeoffs = []
+    dna = INDUSTRY_DNA.get(industry, {})
+
+    if industry == "Food Processing":
+        if water_dist < 2:
+            tradeoffs.append("Proximity to water body increases ETP (effluent treatment) compliance obligation")
+        if airport_mins > 30:
+            tradeoffs.append("Airport distance limits export of perishables — cold-chain shelf-life risk")
+        if cluster_label == "Strong":
+            tradeoffs.append("Dense food cluster → wage inflation risk; labour poaching from competitors")
+        tradeoffs.append("Water scarcity in peak summer months can force production shutdowns")
+
+    elif industry == "Precision Engineering":
+        if power_dist < 3:
+            tradeoffs.append("Grid proximity increases exposure to industrial-load voltage fluctuations — AVR/UPS mandatory")
+        if cluster_label == "Strong":
+            tradeoffs.append("Engineering cluster increases subcontractor dependency — margin pressure in peak demand")
+        tradeoffs.append("Skilled ITI labour is scarce; high-density clusters drive up wage benchmarks")
+
+    elif industry == "Logistics & Warehouse":
+        if highway_mins < 10:
+            tradeoffs.append("Highway proximity → high land lease/acquisition cost; rate escalation likely within 3 years")
+        if icd_mins < 15:
+            tradeoffs.append("ICD proximity creates customs congestion risk during peak import/export cycles")
+        tradeoffs.append("Toll cost on National Highways adds ~₹80–200/trip to FCL/LCL runs — route planning critical")
+
+    elif industry == "Textile / Garments":
+        if water_dist < 3:
+            tradeoffs.append("ETP cost for dyeing units near water: ₹50–150L capex + ₹5–15L/yr opex")
+        tradeoffs.append("Labour-intensive ops face 15–25% seasonal absenteeism (harvest, festival periods)")
+        tradeoffs.append("Yarn price volatility (cotton futures) creates 8–20% margin swings quarterly")
+
+    elif industry == "Electronics / EV":
+        tradeoffs.append("ESD-sensitive assembly requires cleanroom investment (₹30–80L depending on class)")
+        if airport_mins > 30:
+            tradeoffs.append("Delayed air-freight access slows component import cycles — JIT disruption risk")
+        tradeoffs.append("Battery logistics classified as hazardous — special permits, insurance & handling add cost")
+
+    else:
+        tradeoffs.append("Verify site-specific zoning regulations before committing to capex")
+        tradeoffs.append("Infrastructure adequacy must be validated through local authority site inspection")
+
+    return tradeoffs[:3]
+
+
+def generate_location_conclusion(company_name, industry, why_list, challenge_list,
+                                  water_dist, power_dist, airport_mins, cluster_label):
+    """Generate a concise 2-3 sentence location strategy conclusion."""
+    n_why = len(why_list)
+    n_challenges = len(challenge_list)
+
+    if n_why >= 3 and n_challenges <= 1:
+        strength_str = "strong strategic fit"
+        verdict = "This is a well-optimised industrial site."
+    elif n_why >= n_challenges:
+        strength_str = "moderate strategic fit with manageable trade-offs"
+        verdict = "Site selection appears deliberate with accepted operational trade-offs."
+    else:
+        strength_str = "constrained site with notable gaps"
+        verdict = "Location likely chosen for cost or early-mover advantage despite infrastructure gaps."
+
+    dna = INDUSTRY_DNA.get(industry, {})
+    priority_dim = max(dna.get("weights", {"Ecosystem": 0.2}), key=dna.get("weights", {}).get)
+
+    if cluster_label == "Strong":
+        eco_context = "a mature cluster ecosystem supporting vendor access and labour supply"
+    elif cluster_label == "Moderate":
+        eco_context = "an emerging ecosystem with growing vendor and labour infrastructure"
+    else:
+        eco_context = "a greenfield or early-mover position with limited local ecosystem support"
+
+    conclusion = (
+        f"This {industry} location demonstrates {strength_str}. "
+        f"Site selection logic is anchored around {priority_dim.lower()} access, "
+        f"positioned within {eco_context}. "
+        f"{verdict}"
+    )
+    return conclusion
+
+
 def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
     """
     Render the Reverse Location Analysis panel.
@@ -711,12 +1208,14 @@ def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
         return
 
     # ── Coordinate source: auto from company row OR manual input ─────────────
-    if company_row is not None:
+    auto_mode = company_row is not None
+
+    if auto_mode:
         r_lat = float(company_row["lat"])
         r_lon = float(company_row["lon"])
         st.markdown(
-            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#34d399;margin-bottom:0.6rem;">'
-            f'📌 Using parcel coordinates: <strong>{r_lat:.5f}, {r_lon:.5f}</strong></div>',
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#4ade80;margin-bottom:0.6rem;">'
+            f'📌 Auto-coordinates: <strong>{r_lat:.5f}, {r_lon:.5f}</strong></div>',
             unsafe_allow_html=True
         )
     else:
@@ -728,10 +1227,16 @@ def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
             r_lon = st.number_input("Longitude", value=77.068, format="%.5f", key="rev_lon",
                                     help="Paste the longitude of a competitor plant or industry location")
 
-    scan_radius = st.slider("Search radius (km)", 2, 20, 10, key="rev_radius")
+    scan_radius = st.slider("Search radius (km)", 2, 20, 10,
+                            key=f"rev_radius_{str(company_row.get('name', 'parcel') if isinstance(company_row, dict) else 'parcel') if auto_mode else 'manual'}")
     rev_industry = selected_industry  # passed from caller; falls back to None
 
-    if st.button("🔍 Analyse This Location", key="rev_btn"):
+    # Auto-run when triggered from a company button; manual mode requires button click
+    should_run = auto_mode
+    if not auto_mode:
+        should_run = st.button("🔍 Analyse This Location", key="rev_btn")
+
+    if should_run:
         with st.spinner(f"Reverse-engineering site selection logic for {rev_industry or 'this industry'}…"):
 
             # Geocode
@@ -779,7 +1284,7 @@ def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
         # ── Display address ───────────────────────────────────────────────────
         if address:
             st.markdown(
-                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#38bdf8;margin:0.5rem 0;">'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#c9a84c;margin:0.5rem 0;">'
                 f'📌 {address}</div>', unsafe_allow_html=True)
 
         # ── Infrastructure drive times ─────────────────────────────────────────
@@ -801,13 +1306,13 @@ def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
                 st.markdown(f"""
 <div class="reverse-place">
   ✦ <strong>{cat.title()}</strong> — {nearest['name']} is {nearest['dist_km']:.1f} km away
-  <span style="color:#2a4060;"> · {nearest['vicinity']}</span>
+  <span style="color:#3a2a10;"> · {nearest['vicinity']}</span>
 </div>""", unsafe_allow_html=True)
 
         # ── Cluster score banner ───────────────────────────────────────────────
         total_places = sum(len(v) for v in findings.values())
         if total_places >= 10:
-            cluster_col, cluster_txt = "#34d399", f"Strong Cluster · {total_places} relevant units"
+            cluster_col, cluster_txt = "#4ade80", f"Strong Cluster · {total_places} relevant units"
         elif total_places >= 5:
             cluster_col, cluster_txt = "#fbbf24", f"Moderate Cluster · {total_places} units found"
         else:
@@ -815,7 +1320,7 @@ def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
 
         st.markdown(
             f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:{cluster_col};'
-            f'background:#060f1e;border:1px solid {cluster_col}40;border-radius:8px;padding:0.5rem 1rem;'
+            f'background:#0a1018;border:1px solid {cluster_col}40;border-radius:8px;padding:0.5rem 1rem;'
             f'margin:0.6rem 0;">🏭 Cluster Strength: <strong>{cluster_txt}</strong></div>',
             unsafe_allow_html=True
         )
@@ -826,33 +1331,75 @@ def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
                 findings, rev_industry, drive_results, water_d, power_d, wf_score
             )
 
+            # Compute drive mins for hidden tradeoffs + conclusion
+            airport_time  = next((r for r in drive_results if "Airport" in r["label"]), None)
+            icd_time      = next((r for r in drive_results if "ICD" in r["label"]), None)
+            highway_time  = next((r for r in drive_results if "Junction" in r["label"] or "Highway" in r["label"]), None)
+            airport_mins_r  = airport_time["duration_seconds"] // 60 if airport_time and airport_time["duration_seconds"] != 9999 else 9999
+            icd_mins_r      = icd_time["duration_seconds"] // 60    if icd_time    and icd_time["duration_seconds"]    != 9999 else 9999
+            highway_mins_r  = highway_time["duration_seconds"] // 60 if highway_time and highway_time["duration_seconds"] != 9999 else 9999
+            cluster_label_r = "Strong" if total_places >= 10 else "Moderate" if total_places >= 5 else "Weak / Greenfield"
+
+            # Feature 6 — company-specific tone for WHY
+            company_name_r = company_row.get("name", "This company") if isinstance(company_row, dict) else "This company"
+
             why_html = "".join(
                 f'<div class="reasoning-row">'
                 f'<div class="reasoning-dot dot-green"></div>'
-                f'<span style="color:#c8d8f0;">{point}</span></div>'
+                f'<span style="color:#e0d8c0;"><strong style="color:#c9a84c60;">{company_name_r}</strong> — {point}</span></div>'
                 for point in why_list
-            )
+            ) if why_list else ""
+
             challenge_html = "".join(
                 f'<div class="reasoning-row">'
                 f'<div class="reasoning-dot dot-orange"></div>'
-                f'<span style="color:#c8d8f0;">{point}</span></div>'
+                f'<span style="color:#e0d8c0;">{point}</span></div>'
                 for point in challenge_list
             )
 
             ind_icon = INDUSTRY_DNA.get(rev_industry, {}).get("icon", "🏭")
             st.markdown(f"""
-<div class="reasoning-card" style="margin-top:1rem;border-left-color:#34d399;">
-  <div style="font-family:JetBrains Mono,monospace;font-size:0.62rem;color:#34d399;
+<div class="reasoning-card" style="margin-top:1rem;border-left-color:#4ade80;">
+  <div style="font-family:JetBrains Mono,monospace;font-size:0.62rem;color:#4ade80;
        letter-spacing:3px;text-transform:uppercase;margin-bottom:0.8rem;">
-    {ind_icon} {rev_industry} · Industry-Specific Analysis
+    {ind_icon} {rev_industry} · Company-Specific Location Analysis · {company_name_r}
   </div>
 
-  <div class="reasoning-section">🧠 Why This Location Works</div>
+  <div class="reasoning-section">🧠 Why This Location Was Chosen</div>
   {why_html if why_html else '<div class="reasoning-row"><span style="color:#4a6080;">Insufficient data to generate strengths — try increasing scan radius.</span></div>'}
 
-  <div class="reasoning-section" style="margin-top:1rem;">⚠️ Challenges</div>
+  <div class="reasoning-section" style="margin-top:1rem;">⚠️ Operational Challenges</div>
   {challenge_html if challenge_html else '<div class="reasoning-row"><span style="color:#4a6080;">No challenges flagged at this scan radius.</span></div>'}
 </div>""", unsafe_allow_html=True)
+
+            # Feature 6 — Hidden Trade-offs section
+            tradeoffs = generate_hidden_tradeoffs(
+                rev_industry, water_d, power_d, airport_mins_r,
+                icd_mins_r, highway_mins_r, cluster_label_r, wf_score
+            )
+            tradeoffs_html = "".join(
+                f'<div class="tradeoff-item"><div style="width:7px;height:7px;border-radius:50%;'
+                f'background:#a855f7;box-shadow:0 0 6px #a855f7;flex-shrink:0;margin-top:5px;"></div>'
+                f'<span>{t}</span></div>'
+                for t in tradeoffs
+            )
+            st.markdown(f"""
+<div class="hidden-tradeoffs-card">
+  <div class="hidden-tradeoffs-eyebrow">⚠️ Hidden Trade-offs · {rev_industry}</div>
+  {tradeoffs_html}
+</div>""", unsafe_allow_html=True)
+
+            # Feature 6 — Location Strategy Conclusion
+            conclusion_text = generate_location_conclusion(
+                company_name_r, rev_industry, why_list, challenge_list,
+                water_d, power_d, airport_mins_r, cluster_label_r
+            )
+            st.markdown(f"""
+<div class="conclusion-card">
+  <div class="conclusion-eyebrow">🎯 Location Strategy Conclusion</div>
+  <div class="conclusion-text">{conclusion_text}</div>
+</div>""", unsafe_allow_html=True)
+
         else:
             # Generic fallback if no industry selected
             reasons = list(findings.keys())
@@ -1138,9 +1685,31 @@ def load_all():
             icd_points, workforce_df, incentive_df, problems)
 
 
+# ── BRANDING HEADER ── Lands & Lands · Deep Navy + Gold ─────────────────────────
+st.markdown("""
+<div style="position:relative;overflow:hidden;border-radius:20px;margin-bottom:1rem;background:linear-gradient(135deg,#0a0e18 0%,#0e1520 50%,#0a0e18 100%);border:1px solid #2a2010;box-shadow:0 8px 48px #00000060;">
+  <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#3a2a08,#c9a84c,#e2c97a,#c9a84c,#3a2a08);"></div>
+  <div style="display:flex;align-items:center;gap:1.5rem;padding:1.2rem 2rem;">
+    <div style="flex:1;min-width:0;">
+      <div style="font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#c9a84c;letter-spacing:3px;margin-bottom:0.25rem;">LANDS &amp; LANDS</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.8rem;font-weight:800;color:#e2c97a;letter-spacing:-0.5px;line-height:1.05;margin-bottom:0.25rem;">Industrial Intelligence Engine</div>
+      <div style="font-family:monospace;font-size:0.65rem;color:#5a5040;letter-spacing:0.8px;">AI-powered industrial site selection &amp; cluster intelligence platform</div>
+    </div>
+    <div style="flex-shrink:0;text-align:right;border-left:1px solid #2a2010;padding-left:1.5rem;">
+      <div style="font-family:monospace;font-size:0.52rem;color:#3a2e14;letter-spacing:2.5px;text-transform:uppercase;line-height:2.2;">
+        <span style="color:#c9a84c;font-size:0.7rem;font-weight:600;">CBE</span><br>
+        Industrial Site<br>Selection Platform<br>
+        <span style="color:#c9a84c;font-size:0.6rem;">&#9658; v1.0</span>
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+
 # ── HEADER ────────────────────────────────────────────────────────────────────────
 st.title("CBE Industrial Intelligence Engine")
-st.markdown('<p style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#38bdf850;'
+st.markdown('<p style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#c9a84c40;'
             'letter-spacing:2px;margin-top:-0.3rem;">'
             'LAND · INFRASTRUCTURE · ECOSYSTEM · WORKFORCE · INCENTIVES · INDUSTRY LOGIC · LIVE MAPS</p>',
             unsafe_allow_html=True)
@@ -1164,9 +1733,9 @@ GMAPS_KEY = get_gmaps_key()
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div style="font-family:Syne,sans-serif;font-weight:800;font-size:1.1rem;'
-                'background:linear-gradient(90deg,#38bdf8,#818cf8);-webkit-background-clip:text;'
+                'background:linear-gradient(90deg,#c9a84c,#a07840);-webkit-background-clip:text;'
                 '-webkit-text-fill-color:transparent;">⬡ CBE Engine</div>', unsafe_allow_html=True)
-    st.markdown('<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#2a4060;'
+    st.markdown('<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#3a2a10;'
                 'letter-spacing:2px;margin-bottom:1rem;">INDUSTRIAL SITE INTELLIGENCE v4 · MAPS EDITION</div>', unsafe_allow_html=True)
     st.divider()
 
@@ -1175,10 +1744,36 @@ with st.sidebar:
                             format_func=lambda x: f"{INDUSTRY_DNA[x]['icon']}  {x}",
                             label_visibility="collapsed")
     dna = INDUSTRY_DNA[industry]
-    st.markdown(f'<div style="font-family:JetBrains Mono,monospace;font-size:0.66rem;color:#38bdf870;'
-                f'background:#060f1e;border:1px solid #0c2040;border-radius:8px;padding:0.5rem 0.8rem;'
+    st.markdown(f'<div style="font-family:JetBrains Mono,monospace;font-size:0.66rem;color:#c9a84c60;'
+                f'background:#0a1018;border:1px solid #0c2040;border-radius:8px;padding:0.5rem 0.8rem;'
                 f'margin-top:0.4rem;line-height:1.6;">{dna["desc"]}</div>', unsafe_allow_html=True)
 
+    st.divider()
+    # ── FEATURE 5: DECISION MODE ──────────────────────────────────────────────
+    st.markdown('<span class="sidebar-label">🎯 Decision Mode</span>', unsafe_allow_html=True)
+    decision_input = st.text_input(
+        "",
+        placeholder="e.g. food processing export unit",
+        label_visibility="collapsed",
+        key="decision_mode_input",
+        help="Type your business intent — the engine will auto-adjust scoring weights."
+    )
+    dm_adjustments, dm_keywords, dm_narrative = parse_decision_mode(decision_input)
+    if dm_adjustments:
+        st.markdown(
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.62rem;color:#c9a84c;'
+            f'background:#0e0520;border:1px solid #3a1a50;border-radius:8px;padding:0.5rem 0.8rem;'
+            f'margin-top:0.3rem;line-height:1.7;">'
+            f'🔑 Keywords: {", ".join(dm_keywords)}<br>'
+            f'⚖️ {dm_narrative if dm_narrative else "Weights adjusted"}</div>',
+            unsafe_allow_html=True
+        )
+    elif decision_input.strip():
+        st.markdown(
+            '<div style="font-family:JetBrains Mono,monospace;font-size:0.62rem;color:#3a2a10;'
+            'margin-top:0.3rem;">No keywords detected — try: export, agro, manufacturing, cost…</div>',
+            unsafe_allow_html=True
+        )
     st.divider()
     st.markdown('<span class="sidebar-label">Weight Profile</span>', unsafe_allow_html=True)
     weight_labels = {"Power ⚡":"Power","Airport ✈":"Airport","Water 💧":"Water",
@@ -1188,9 +1783,9 @@ with st.sidebar:
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">'
             f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#4a6080;width:100px;">{label}</div>'
-            f'<div style="flex:1;background:#0b1526;border-radius:4px;height:5px;">'
-            f'<div style="width:{pct}%;background:linear-gradient(90deg,#38bdf8,#818cf8);height:5px;border-radius:4px;"></div></div>'
-            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#dde3f0;width:26px;text-align:right;">{pct}%</div>'
+            f'<div style="flex:1;background:#0d1525;border-radius:4px;height:5px;">'
+            f'<div style="width:{pct}%;background:linear-gradient(90deg,#c9a84c,#a07840);height:5px;border-radius:4px;"></div></div>'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#e8e0d0;width:26px;text-align:right;">{pct}%</div>'
             f'</div>', unsafe_allow_html=True)
 
     st.divider()
@@ -1334,6 +1929,10 @@ df["ecosystem"] = df.apply(ecosystem_score, axis=1)
 
 # ── SCORING ───────────────────────────────────────────────────────────────────────
 weights = dna["weights"]
+
+# Feature 5: Apply Decision Mode weight adjustments if active
+if dm_adjustments:
+    weights = apply_decision_weights(weights, dm_adjustments)
 df["n_power"]     = normalize(df["power_dist"])
 df["n_airport"]   = normalize(df["airport_dist"])
 df["n_water"]     = normalize(df["water_dist"])
@@ -1427,6 +2026,68 @@ if constraints:
 st.divider()
 
 
+# ── FEATURE 5: DECISION MODE BANNER ──────────────────────────────────────────
+if dm_adjustments and dm_narrative:
+    adjusted_display = " · ".join(
+        f"{k} {'+' if v > 0 else ''}{v*100:.0f}%" for k, v in dm_adjustments.items()
+    )
+    st.markdown(f"""
+<div class="decision-mode-card">
+  <div class="decision-eyebrow">🎯 Decision Mode Active · Custom Weight Profile Applied</div>
+  <div class="decision-parsed">
+    <strong style="color:#c9a84c;">Intent detected:</strong> {', '.join(dm_keywords)}<br>
+    <strong style="color:#a07840;">Weight adjustments:</strong> {adjusted_display}<br>
+    <strong style="color:#c9a84c;">Effect:</strong> {dm_narrative}
+  </div>
+</div>""", unsafe_allow_html=True)
+
+
+# ── FEATURE 1 & 2: WHY THIS LAND WINS + WHAT'S MISSING ──────────────────────
+wins_strengths, wins_missing = compute_why_wins_and_missing(winner, df, industry, weights)
+
+feat_col_a, feat_col_b = st.columns(2, gap="large")
+
+with feat_col_a:
+    st.markdown('<div class="section-header"><span class="section-icon">🏆</span>'
+                '<span class="section-title">Why This Land Wins</span><div class="section-line"></div></div>',
+                unsafe_allow_html=True)
+    if wins_strengths:
+        items_html = "".join(
+            f'<div class="wins-item"><div class="wins-dot"></div><span>{s}</span></div>'
+            for s in wins_strengths
+        )
+        st.markdown(f"""
+<div class="wins-card">
+  <div class="wins-eyebrow">🏆 Top strengths vs all ranked parcels</div>
+  {items_html}
+</div>""", unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="wins-card"><div class="wins-eyebrow">🏆 Why This Land Wins</div>'
+                    '<div class="wins-item"><span style="color:#4a6080;">Winner beats all parcels across multiple dimensions — see metrics above.</span></div></div>',
+                    unsafe_allow_html=True)
+
+with feat_col_b:
+    st.markdown('<div class="section-header"><span class="section-icon">⚠️</span>'
+                '<span class="section-title">What\'s Missing / Trade-offs</span><div class="section-line"></div></div>',
+                unsafe_allow_html=True)
+    if wins_missing:
+        items_html = "".join(
+            f'<div class="missing-item"><div class="missing-dot"></div><span>{m}</span></div>'
+            for m in wins_missing
+        )
+        st.markdown(f"""
+<div class="missing-card">
+  <div class="missing-eyebrow">⚠️ Gaps vs ideal industry DNA</div>
+  {items_html}
+</div>""", unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="missing-card"><div class="missing-eyebrow">⚠️ What\'s Missing</div>'
+                    '<div class="missing-item"><span style="color:#4a6080;">No significant gaps vs ideal industry thresholds.</span></div></div>',
+                    unsafe_allow_html=True)
+
+st.divider()
+
+
 # ── WHY THIS SITE + TOP 3 ─────────────────────────────────────────────────────────
 col_left,col_right = st.columns([1.1,1],gap="large")
 
@@ -1463,7 +2124,7 @@ with col_left:
 
     st.markdown(f"""
 <div class="reasoning-card">
-  <div style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#38bdf8;margin-bottom:1rem;">
+  <div style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#c9a84c;margin-bottom:1rem;">
     Primary advantage: <strong style="color:#fff;">{dominant}</strong>
   </div>
 
@@ -1619,21 +2280,115 @@ with gmaps_tab2:
 with gmaps_tab3:
     st.markdown(
         '<div style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:#4a6080;margin-bottom:1rem;">'
-        'Select any ranked parcel below — the engine will automatically use its coordinates to reverse-engineer '
-        'why that location was chosen, using <strong style="color:#38bdf8;">industry-specific reasoning</strong> '
-        f'tuned for <strong style="color:#818cf8;">{industry}</strong>.</div>',
+        f'Fetches real <strong style="color:#c9a84c;">{industry}</strong> companies from Google Places, '
+        'then reverse-engineers why each location was chosen — using industry-specific reasoning. '
+        'Click any company card to instantly run the analysis.</div>',
         unsafe_allow_html=True
     )
 
     rev_mode = st.radio(
-        "Analysis mode",
-        ["📋 Use a ranked parcel (auto coordinates)", "📍 Enter coordinates manually"],
+        "Analysis source",
+        ["🏢 Real Companies (Google Places)", "📋 Use a ranked parcel", "📍 Enter coordinates manually"],
         key="rev_mode",
         horizontal=True,
         label_visibility="collapsed"
     )
 
-    if rev_mode.startswith("📋"):
+    if rev_mode.startswith("🏢"):
+        # ── NEW: Fetch real companies from Google Places ───────────────────
+        st.markdown(
+            f'<div class="companies-header">🏢 Real {industry} Companies · Google Places API</div>',
+            unsafe_allow_html=True
+        )
+
+        # Use winner parcel as reference point for nearby search
+        ref_lat = winner["lat"]
+        ref_lon = winner["lon"]
+
+        if not GMAPS_KEY:
+            st.markdown(
+                '<div class="no-key-box">⚙️ Set <code>GOOGLE_MAPS_API_KEY</code> in app.py to fetch real companies.</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            # Cache companies in session_state per industry to avoid re-fetching on every interaction
+            cache_key = f"companies_{industry}"
+            if cache_key not in st.session_state:
+                with st.spinner(f"Fetching real {industry} companies from Google Places…"):
+                    st.session_state[cache_key] = fetch_top_companies(ref_lat, ref_lon, industry, GMAPS_KEY)
+
+            companies = st.session_state[cache_key]
+
+            if not companies:
+                st.markdown(
+                    '<div class="no-key-box">No companies found. Check your API key or try a different industry.</div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f'<div style="font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#3a2a10;margin-bottom:1rem;">'
+                    f'Found {len(companies)} real companies within 15 km · Sorted by rating · Click to analyse</div>',
+                    unsafe_allow_html=True
+                )
+
+                # Display each company card with a Reverse Analysis button
+                for i, company in enumerate(companies):
+                    rating_stars = f"⭐ {company['rating']:.1f}" if company['rating'] else "No rating"
+                    ind_icon = INDUSTRY_DNA.get(industry, {}).get("icon", "🏭")
+
+                    st.markdown(f"""
+<div class="company-card">
+  <div style="display:flex;align-items:flex-start;gap:12px;">
+    <div style="font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:800;color:#1a2a40;
+                width:1.8rem;flex-shrink:0;padding-top:2px;">#{i+1}</div>
+    <div style="flex:1;min-width:0;">
+      <div class="company-name">{ind_icon} {company['name']}</div>
+      <div class="company-meta">
+        📍 {company['vicinity']}<br>
+        {rating_stars} &nbsp;·&nbsp; 📏 {company['dist_km']:.1f} km from reference &nbsp;·&nbsp;
+        🔑 Found via: <em>{company['search_kw']}</em>
+      </div>
+    </div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+                    btn_key = f"rev_company_btn_{i}_{industry}"
+                    if st.button(f"🔍 Reverse Location Analysis — {company['name']}", key=btn_key):
+                        st.session_state[f"selected_company_{industry}"] = i
+
+                # Run analysis for the selected company
+                selected_key = f"selected_company_{industry}"
+                if selected_key in st.session_state:
+                    sel_idx = st.session_state[selected_key]
+                    if 0 <= sel_idx < len(companies):
+                        sel_company = companies[sel_idx]
+                        st.divider()
+                        st.markdown(
+                            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.72rem;'
+                            f'color:#a07840;margin-bottom:0.5rem;">📊 Analysing: '
+                            f'<strong style="color:#fff;">{sel_company["name"]}</strong>'
+                            f' · {sel_company["vicinity"]}</div>',
+                            unsafe_allow_html=True
+                        )
+                        render_reverse_analysis(
+                            api_key=GMAPS_KEY,
+                            company_row={
+                                "lat": sel_company["lat"],
+                                "lon": sel_company["lon"],
+                                "name": sel_company["name"],
+                            },
+                            selected_industry=industry
+                        )
+
+                # Button to refresh company list
+                if st.button("🔄 Refresh Company List", key="refresh_companies"):
+                    if cache_key in st.session_state:
+                        del st.session_state[cache_key]
+                    if f"selected_company_{industry}" in st.session_state:
+                        del st.session_state[f"selected_company_{industry}"]
+                    st.rerun()
+
+    elif rev_mode.startswith("📋"):
         rev_parcel = st.selectbox(
             "Select parcel to analyse",
             parcel_names,
@@ -1644,8 +2399,194 @@ with gmaps_tab3:
         rev_row = df[df[area_col] == rev_parcel].iloc[0]
         st.caption(f"📌 Coordinates locked: {rev_row['lat']:.5f}, {rev_row['lon']:.5f}")
         render_reverse_analysis(GMAPS_KEY, company_row=rev_row, selected_industry=industry)
+
     else:
         render_reverse_analysis(GMAPS_KEY, company_row=None, selected_industry=industry)
+
+st.divider()
+
+
+# ── FEATURE 4: COMPARE TOP 3 LANDS ───────────────────────────────────────────
+st.markdown('<div class="section-header"><span class="section-icon">📊</span>'
+            '<span class="section-title">Compare Top 3 Lands</span><div class="section-line"></div></div>',
+            unsafe_allow_html=True)
+
+top3 = df.head(min(3, len(df))).copy()
+
+def _cls3(vals, col_series, higher_is_better=False):
+    """Return CSS class for top/mid/worst value in a list of 3."""
+    if len(vals) < 2:
+        return ["compare-val-best"] * len(vals)
+    if higher_is_better:
+        sorted_v = sorted(vals, reverse=True)
+    else:
+        sorted_v = sorted(vals)
+    classes = []
+    for v in vals:
+        if v == sorted_v[0]:
+            classes.append("compare-val-best")
+        elif len(sorted_v) > 2 and v == sorted_v[-1]:
+            classes.append("compare-val-worst")
+        else:
+            classes.append("compare-val-mid")
+    return classes
+
+water_vals  = [r["water_dist"]    for _, r in top3.iterrows()]
+power_vals  = [r["power_dist"]    for _, r in top3.iterrows()]
+hwy_vals    = [r["highway_dist"]  for _, r in top3.iterrows()]
+eco_vals    = [r["ecosystem"]     for _, r in top3.iterrows()]
+wf_vals     = [r["workforce_score"] for _, r in top3.iterrows()]
+airport_vals= [r["airport_dist"]  for _, r in top3.iterrows()]
+icd_vals    = [r["icd_dist"]      for _, r in top3.iterrows()]
+
+water_cls   = _cls3(water_vals,  None, higher_is_better=False)
+power_cls   = _cls3(power_vals,  None, higher_is_better=False)
+hwy_cls     = _cls3(hwy_vals,    None, higher_is_better=False)
+eco_cls3    = _cls3(eco_vals,    None, higher_is_better=True)
+wf_cls      = _cls3(wf_vals,     None, higher_is_better=True)
+airport_cls = _cls3(airport_vals,None, higher_is_better=False)
+icd_cls     = _cls3(icd_vals,    None, higher_is_better=False)
+
+rows_html = ""
+rank_labels = ["🥇 #1 Winner", "🥈 #2", "🥉 #3"]
+for i, (_, r) in enumerate(top3.iterrows()):
+    row_class = "winner-row" if i == 0 else ""
+    score_pct3 = max(0, min(100, int((1 - r["final_score"]) * 100)))
+    rows_html += f"""
+<tr class="{row_class}">
+  <td><strong>{rank_labels[i]}</strong><br>
+    <span style="font-size:0.65rem;color:#4a6080;">{r[area_col]}</span><br>
+    <span style="font-size:0.6rem;color:#c9a84c;">{score_pct3}/100</span>
+  </td>
+  <td class="{water_cls[i]}">{r['water_dist']:.1f} km</td>
+  <td class="{power_cls[i]}">{r['power_dist']:.1f} km</td>
+  <td class="{hwy_cls[i]}">{r['highway_dist']:.1f} km</td>
+  <td class="{airport_cls[i]}">{r['airport_dist']:.1f} km</td>
+  <td class="{icd_cls[i]}">{r['icd_dist']:.1f} km</td>
+  <td class="{eco_cls3[i]}">{int(r['ecosystem'])} pts</td>
+  <td class="{wf_cls[i]}">{r['workforce_score']:.2f}</td>
+</tr>"""
+
+st.markdown(f"""
+<div class="compare-table-card">
+  <div class="compare-header">📊 Side-by-Side Comparison · Top 3 Ranked Parcels · Green = Best · Orange = Weakest</div>
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th>Parcel</th>
+        <th>💧 Water</th>
+        <th>⚡ Power</th>
+        <th>🛣️ Highway</th>
+        <th>✈️ Airport</th>
+        <th>🚢 ICD Port</th>
+        <th>🏭 Ecosystem</th>
+        <th>👷 Workforce</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows_html}
+    </tbody>
+  </table>
+</div>""", unsafe_allow_html=True)
+
+# ── Recommendation by use-case ────────────────────────────────────────────────
+def _best_for(top3_df, area_col, priority_cols, higher_is_better_flags):
+    """Return name of parcel that scores best on given priority columns."""
+    scores = []
+    for _, r in top3_df.iterrows():
+        s = 0
+        for col, hib in zip(priority_cols, higher_is_better_flags):
+            if col in r.index:
+                s += (r[col] if hib else -r[col])
+        scores.append(s)
+    best_idx = scores.index(max(scores))
+    return top3_df.iloc[best_idx][area_col]
+
+prod_best   = _best_for(top3, area_col, ["power_dist", "water_dist"], [False, False])
+export_best = _best_for(top3, area_col, ["airport_dist", "icd_dist"], [False, False])
+cost_best   = _best_for(top3, area_col, ["incentive_score", "workforce_score"], [True, True])
+
+st.markdown(f"""
+<div class="recommend-row">
+  <div class="recommend-pill">
+    <strong>⚙️ Best for Production-Heavy</strong>
+    {prod_best} — closest to power & water; ideal for high-throughput manufacturing ops
+  </div>
+  <div class="recommend-pill">
+    <strong>✈️ Best for Export-Heavy</strong>
+    {export_best} — shortest combined airport + ICD distance; fastest cargo turnaround
+  </div>
+  <div class="recommend-pill">
+    <strong>💰 Best for Cost-Sensitive</strong>
+    {cost_best} — highest incentive + workforce score combination; lower opex baseline
+  </div>
+</div>""", unsafe_allow_html=True)
+
+st.divider()
+
+
+# ── FEATURE 3: CLUSTER STRATEGY INSIGHT ──────────────────────────────────────
+# (Rendered after ecosystem scan is triggered — injected via session state)
+st.markdown('<div class="section-header"><span class="section-icon">🧠</span>'
+            '<span class="section-title">Cluster Strategy Insight</span><div class="section-line"></div></div>',
+            unsafe_allow_html=True)
+
+if "live_places_df" in st.session_state and not st.session_state["live_places_df"].empty:
+    # Reuse companies fetched by ecosystem scan (stored in session_state)
+    cache_key_cs = f"companies_{industry}"
+    companies_for_cluster = st.session_state.get(cache_key_cs, [])
+    water_ll = list(zip(water["latitude"], water["longitude"])) if water is not None and not water.empty else []
+    cluster_stats, cluster_insight = compute_cluster_strategy_insight(
+        companies_for_cluster, winner["lat"], winner["lon"], industry,
+        substations, icd_points, highway_coords, water_ll
+    )
+
+    if cluster_stats:
+        def fmt_stat(v, unit="km"):
+            return f"{v:.1f} {unit}" if v is not None else "N/A"
+
+        stat_html = f"""
+<div class="cluster-stat-grid">
+  <div class="cluster-stat">
+    <div class="cluster-stat-label">Avg Highway Dist</div>
+    <div class="cluster-stat-val">{fmt_stat(cluster_stats.get('avg_highway_km'))}</div>
+  </div>
+  <div class="cluster-stat">
+    <div class="cluster-stat-label">Avg Water Dist</div>
+    <div class="cluster-stat-val">{fmt_stat(cluster_stats.get('avg_water_km'))}</div>
+  </div>
+  <div class="cluster-stat">
+    <div class="cluster-stat-label">Avg Airport Dist</div>
+    <div class="cluster-stat-val">{fmt_stat(cluster_stats.get('avg_airport_km'))}</div>
+  </div>
+  <div class="cluster-stat">
+    <div class="cluster-stat-label">Companies Scanned</div>
+    <div class="cluster-stat-val">{cluster_stats.get('total_companies', 0)}</div>
+  </div>
+</div>"""
+
+        st.markdown(f"""
+<div class="cluster-insight-card">
+  <div class="cluster-insight-eyebrow">🧠 Cluster Strategy Insight · {industry} · Based on {cluster_stats.get('total_companies', 0)} live companies</div>
+  {stat_html}
+  <div class="cluster-insight-text">{cluster_insight if cluster_insight else "Run the Live Ecosystem Scan to generate cluster strategy data."}</div>
+</div>""", unsafe_allow_html=True)
+    else:
+        st.markdown("""
+<div class="cluster-insight-card">
+  <div class="cluster-insight-eyebrow">🧠 Cluster Strategy Insight</div>
+  <div class="cluster-insight-text">No company data loaded yet. Run the <strong>Live Ecosystem Scan</strong> in the Google Maps Intelligence tab to generate cluster insights.</div>
+</div>""", unsafe_allow_html=True)
+else:
+    st.markdown("""
+<div class="cluster-insight-card">
+  <div class="cluster-insight-eyebrow">🧠 Cluster Strategy Insight · Awaiting Live Data</div>
+  <div class="cluster-insight-text">
+    Run the <strong style="color:#a07840;">Live Ecosystem Scan</strong> (Google Maps Intelligence → 📍 Live Ecosystem Scan) to unlock cluster strategy analysis.
+    The engine will compute avg distances to highway, water and airport across all detected companies,
+    then generate a data-driven insight into the location logic of this industry cluster.
+  </div>
+</div>""", unsafe_allow_html=True)
 
 st.divider()
 
@@ -1719,8 +2660,8 @@ if "live_places_df" in st.session_state and not st.session_state["live_places_df
         data=st.session_state["live_places_df"],
         get_position="[lon,lat]",get_color="color",get_radius="radius",pickable=True))
 
-tooltip={"html":'<div style="font-family:JetBrains Mono,monospace;font-size:11px;background:#0b1526;'
-                'color:#dde3f0;border:1px solid #1e4080;border-radius:8px;padding:10px 14px;'
+tooltip={"html":'<div style="font-family:JetBrains Mono,monospace;font-size:11px;background:#0d1525;'
+                'color:#e8e0d0;border:1px solid #3a2a10;border-radius:8px;padding:10px 14px;'
                 'max-width:380px;line-height:1.7;">{label}</div>',
          "style":{"backgroundColor":"transparent","border":"none"}}
 
@@ -1742,7 +2683,7 @@ st.markdown("""
   <div class="legend-item"><div class="legend-dot" style="background:#ff8c00;"></div>Highway Junctions</div>
   <div class="legend-item"><div class="legend-dot" style="background:#ffd700;"></div>Live Places (Maps)</div>
 </div>
-<div style="font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#2a4060;margin-top:0.5rem;">
+<div style="font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#3a2a10;margin-top:0.5rem;">
   Hover any marker · Winner has glow ring · 11 intelligence layers active · Google Maps live layer when scanned
 </div>""", unsafe_allow_html=True)
 
