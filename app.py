@@ -5,6 +5,11 @@ import re
 import os
 import pydeck as pdk
 import requests
+# openpyxl is required for pd.read_excel — install with: pip install openpyxl
+try:
+    import openpyxl  # noqa: F401
+except ImportError:
+    pass  # pd.read_excel will raise a clear error if missing
 
 st.set_page_config(page_title="CBE Industrial Intelligence Engine",
                    layout="wide", initial_sidebar_state="expanded", page_icon="🏭")
@@ -320,13 +325,19 @@ DENSITY_SCORE = {
 }
 INCENTIVE_TIER_SCORE = {"backward": 1.0, "standard": 0.60}
 
+# ── VOLTAGE CONSTANTS ────────────────────────────────────────────────────────
+# Multiplier applied to effective distance: lower multiplier = "closer" in scoring
+# 400kV is best (0.70x), 230kV good (0.85x), 110kV standard (1.0x), <110kV excluded
+VOLTAGE_MULTIPLIER = {400: 0.70, 230: 0.85, 110: 1.00}
+VOLTAGE_MIN_KV     = 110   # substations below this are excluded from scoring
+
 INDUSTRY_DNA = {
     "Precision Engineering": {
         "weights": {"Power":0.30,"Airport":0.15,"Water":0.05,"Ecosystem":0.25,"Workforce":0.15,"Incentive":0.10},
         "keywords": ["engineering","foundry","machine","tool","fabricat","casting","forge","metal","machining","pump"],
         "workforce_match": ["Semi-Skilled (Industrial)","Skilled (Mechanical)","Semi-Skilled (Foundry)","Semi-Skilled (Technician)"],
         "icon": "⚙️", "desc": "Power reliability, engineering cluster, skilled workforce",
-        # Google Places types to search for this industry
+        "min_voltage_kv": 110,   # 110kV sufficient
         "places_types": ["factory","storage","hardware_store","electrician"],
         "places_keywords": ["machine shop","metal fabrication","foundry","engineering","industrial supplier"],
     },
@@ -335,6 +346,7 @@ INDUSTRY_DNA = {
         "keywords": ["food","agro","dairy","grain","mill","spice","rice","flour","packaging","beverage"],
         "workforce_match": ["Unskilled (Agro-processing)","Unskilled / Semi-Skilled"],
         "icon": "🌾", "desc": "Water proximity critical; agro workforce and cluster valued",
+        "min_voltage_kv": 110,   # 110kV sufficient
         "places_types": ["storage","food","grocery_or_supermarket"],
         "places_keywords": ["cold storage","agro processing","food packaging","flour mill","rice mill"],
     },
@@ -343,6 +355,7 @@ INDUSTRY_DNA = {
         "keywords": [],
         "workforce_match": ["Unskilled (Logistics)","Mixed (Commuter)"],
         "icon": "📦", "desc": "Airport, ICD dry port, highway connectivity are primary",
+        "min_voltage_kv": 110,   # even 33kV works but 110kV used as floor
         "places_types": ["storage","moving_company","transit_station"],
         "places_keywords": ["warehouse","freight","logistics","transport","courier","cargo"],
     },
@@ -351,6 +364,7 @@ INDUSTRY_DNA = {
         "keywords": ["textile","yarn","weav","garment","spinning","knit","dyeing","bleach","apparel","cotton"],
         "workforce_match": ["Semi-Skilled (Textile)","Unskilled / Semi-Skilled"],
         "icon": "🧵", "desc": "Textile cluster, water for dyeing, garment workforce",
+        "min_voltage_kv": 110,   # 110kV sufficient
         "places_types": ["clothing_store","factory","laundry"],
         "places_keywords": ["textile","spinning mill","garment","yarn","dyeing","weaving"],
     },
@@ -359,8 +373,33 @@ INDUSTRY_DNA = {
         "keywords": ["electronics","auto","ev","electric","battery","semicon","pcb","motor","component","tech"],
         "workforce_match": ["Skilled (Digital)","Mixed (Manufacturing)","Skilled Professionals"],
         "icon": "⚡", "desc": "Airport for exports, reliable power, tech-skilled workforce",
+        "min_voltage_kv": 110,   # 110kV min; 230/400kV preferred (handled by voltage multiplier)
         "places_types": ["electronics_store","factory","car_repair"],
         "places_keywords": ["electronics","EV","battery","components","PCB","motor winding"],
+    },
+}
+
+COMMERCIAL_DNA = {
+    "Retail High Street": {
+        "weights": {"Footfall": 0.30, "Visibility": 0.20, "Accessibility": 0.18,
+                    "Competition": 0.12, "Catchment": 0.12, "Parking": 0.08},
+        "places_keywords": ["shopping mall", "supermarket", "bank", "retail store", "pharmacy"],
+        "icon": "🛍️",
+        "description": "Footfall & visibility dominate; anchored by residential catchment",
+    },
+    "Office Space": {
+        "weights": {"Footfall": 0.15, "Visibility": 0.15, "Accessibility": 0.30,
+                    "Competition": 0.10, "Catchment": 0.18, "Parking": 0.12},
+        "places_keywords": ["office", "business park", "coworking", "bank", "hotel"],
+        "icon": "🏢",
+        "description": "Transit access & parking critical; proximity to business district",
+    },
+    "F&B / Cafe": {
+        "weights": {"Footfall": 0.35, "Visibility": 0.22, "Accessibility": 0.15,
+                    "Competition": 0.15, "Catchment": 0.08, "Parking": 0.05},
+        "places_keywords": ["restaurant", "cafe", "food court", "hotel", "college"],
+        "icon": "☕",
+        "description": "Footfall corridor & visibility paramount; competition impacts margin",
     },
 }
 
@@ -383,9 +422,230 @@ DIM_TO_COL = {
 # GOOGLE MAPS API HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Coimbatore city centre — used as anchor for infrastructure API lookups
+CBE_CENTRE = (11.004, 77.029)
+
+# ICD / Dry-port points (too specific for Places API — keep hardcoded)
+ICD_HARDCODED = [
+    (11.016, 77.016, "ICD Irugur"),
+]
+
 def get_gmaps_key():
     """Return the Google Maps API key from the global variable."""
     return GOOGLE_MAPS_API_KEY
+
+
+# ── NEW: Infrastructure fetchers via Places API ───────────────────────────────
+
+@st.cache_data(show_spinner=False, ttl=86400)
+def gmaps_fetch_water_bodies(api_key, centre=CBE_CENTRE, radius=40000):
+    """
+    Fetch water bodies (lakes, rivers, reservoirs) near Coimbatore from Places API.
+    Returns a DataFrame with latitude, longitude, name columns.
+    Falls back to empty DataFrame if API fails.
+    """
+    if not api_key:
+        return pd.DataFrame()
+    keywords = ["lake", "river", "reservoir", "canal", "pond", "water body"]
+    seen, rows = set(), []
+    for kw in keywords:
+        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        params = {"location": f"{centre[0]},{centre[1]}", "radius": radius,
+                  "keyword": kw, "key": api_key}
+        try:
+            resp = requests.get(url, params=params, timeout=8)
+            for p in resp.json().get("results", []):
+                name = p.get("name", "Water Body")
+                plat = p["geometry"]["location"]["lat"]
+                plon = p["geometry"]["location"]["lng"]
+                key_id = f"{plat:.4f}_{plon:.4f}"
+                if key_id not in seen:
+                    seen.add(key_id)
+                    rows.append({"name": name, "latitude": plat, "longitude": plon})
+        except Exception:
+            pass
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=86400)
+def gmaps_fetch_railway_stations(api_key, centre=CBE_CENTRE, radius=40000):
+    """
+    Fetch railway stations near Coimbatore from Places API (type=train_station).
+    Returns list of (lat, lon) tuples and a DataFrame with _lat, _lon, station_name.
+    """
+    if not api_key:
+        return [], pd.DataFrame()
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    params = {"location": f"{centre[0]},{centre[1]}", "radius": radius,
+              "type": "train_station", "key": api_key}
+    seen, rows = set(), []
+    try:
+        resp = requests.get(url, params=params, timeout=8)
+        for p in resp.json().get("results", []):
+            plat = p["geometry"]["location"]["lat"]
+            plon = p["geometry"]["location"]["lng"]
+            key_id = f"{plat:.4f}_{plon:.4f}"
+            if key_id not in seen:
+                seen.add(key_id)
+                rows.append({"_lat": plat, "_lon": plon,
+                             "station_name": p.get("name", "Railway Station")})
+    except Exception:
+        pass
+    if not rows:
+        return [], pd.DataFrame()
+    df_rail = pd.DataFrame(rows)
+    stations = list(zip(df_rail["_lat"], df_rail["_lon"]))
+    return stations, df_rail
+
+
+@st.cache_data(show_spinner=False, ttl=86400)
+def gmaps_fetch_sidco_estates(api_key, centre=CBE_CENTRE, radius=50000):
+    """
+    Fetch SIDCO / industrial estates near Coimbatore from Places API.
+    Returns a DataFrame with latitude, longitude, name columns.
+    """
+    if not api_key:
+        return pd.DataFrame()
+    keywords = ["SIDCO industrial estate", "industrial estate coimbatore",
+                "industrial park coimbatore", "SIPCOT estate"]
+    seen, rows = set(), []
+    for kw in keywords:
+        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        params = {"location": f"{centre[0]},{centre[1]}", "radius": radius,
+                  "keyword": kw, "key": api_key}
+        try:
+            resp = requests.get(url, params=params, timeout=8)
+            for p in resp.json().get("results", []):
+                plat = p["geometry"]["location"]["lat"]
+                plon = p["geometry"]["location"]["lng"]
+                key_id = f"{plat:.4f}_{plon:.4f}"
+                if key_id not in seen:
+                    seen.add(key_id)
+                    rows.append({"name": p.get("name", "Industrial Estate"),
+                                 "latitude": plat, "longitude": plon})
+        except Exception:
+            pass
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=86400)
+def gmaps_fetch_corridor_companies(api_key, industry, centre=CBE_CENTRE, radius=30000):
+    """
+    Fetch industrial corridor companies for the given industry type from Places API.
+    Returns a DataFrame compatible with the existing corridor DataFrame structure.
+    """
+    if not api_key:
+        return pd.DataFrame()
+    dna_entry = INDUSTRY_DNA.get(industry, {})
+    keywords_list = dna_entry.get("places_keywords", [industry.lower()])
+    seen, rows = set(), []
+    for kw in keywords_list[:4]:
+        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        params = {"location": f"{centre[0]},{centre[1]}", "radius": radius,
+                  "keyword": kw, "key": api_key}
+        try:
+            resp = requests.get(url, params=params, timeout=8)
+            for p in resp.json().get("results", []):
+                name = p.get("name", "")
+                plat = p["geometry"]["location"]["lat"]
+                plon = p["geometry"]["location"]["lng"]
+                key_id = name.lower().strip()
+                if key_id and key_id not in seen:
+                    seen.add(key_id)
+                    rows.append({"name": name, "latitude": plat, "longitude": plon,
+                                 "industry": industry,
+                                 "vicinity": p.get("vicinity", ""),
+                                 "rating": p.get("rating", None)})
+        except Exception:
+            pass
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False, ttl=86400)
+def gmaps_fetch_substations(api_key, centre=CBE_CENTRE, radius=60000):
+    """
+    Fetch electrical substations near Coimbatore from Places API.
+    Returns a list of dicts: {lat, lon, name, voltage_kv, source}.
+    Merges with KNOWN_SUBSTATIONS (which carry exact voltage ratings).
+    Any substation below VOLTAGE_MIN_KV is excluded.
+    """
+    if not api_key:
+        return []
+
+    seen, rows = set(), []
+
+    # ── Step 1: Pull from Google Places ──────────────────────────────────────
+    for kw in ["TNEB substation", "electrical substation", "power substation",
+                "HT substation", "EHT substation"]:
+        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        params = {"location": f"{centre[0]},{centre[1]}", "radius": radius,
+                  "keyword": kw, "key": api_key}
+        try:
+            resp = requests.get(url, params=params, timeout=8)
+            for p in resp.json().get("results", []):
+                plat = p["geometry"]["location"]["lat"]
+                plon = p["geometry"]["location"]["lng"]
+                key_id = f"{plat:.3f}_{plon:.3f}"
+                if key_id in seen:
+                    continue
+                seen.add(key_id)
+                name = p.get("name", "Substation")
+                # Try to parse voltage from name (e.g. "400kV", "110 KV")
+                vm = re.search(r"(\d{2,3})\s*k[vV]", name)
+                voltage = int(vm.group(1)) if vm else None
+                rows.append({"lat": plat, "lon": plon, "name": name,
+                             "voltage_kv": voltage, "source": "api"})
+        except Exception:
+            pass
+
+    # ── Step 2: Merge with KNOWN_SUBSTATIONS (exact voltage data) ────────────
+    for lat, lon, name in KNOWN_SUBSTATIONS:
+        key_id = f"{lat:.3f}_{lon:.3f}"
+        vm = re.search(r"(\d{2,3})\s*k[vV]", name, re.I)
+        voltage = int(vm.group(1)) if vm else 110
+        if key_id in seen:
+            # Update voltage on the API-fetched entry if it was unknown
+            for r in rows:
+                if f"{r['lat']:.3f}_{r['lon']:.3f}" == key_id:
+                    r["voltage_kv"] = voltage
+                    r["name"] = name  # use official name
+                    r["source"] = "known"
+                    break
+        else:
+            seen.add(key_id)
+            rows.append({"lat": lat, "lon": lon, "name": name,
+                         "voltage_kv": voltage, "source": "known"})
+
+    # ── Step 3: Assign default 110kV to API entries with unknown voltage ──────
+    for r in rows:
+        if r["voltage_kv"] is None:
+            r["voltage_kv"] = 110
+
+    # ── Step 4: Exclude substations below minimum voltage ─────────────────────
+    rows = [r for r in rows if r["voltage_kv"] >= VOLTAGE_MIN_KV]
+
+    return rows
+
+
+def voltage_aware_power_dist(parcel_lat, parcel_lon, substations_rich, industry):
+    """
+    Compute effective power distance for a parcel, accounting for substation voltage.
+
+    For each substation, the effective distance = actual_distance * voltage_multiplier.
+    Lower voltage multiplier = substation is "effectively closer" in scoring.
+    Returns (effective_dist_km, nearest_name, nearest_voltage_kv, actual_dist_km).
+    """
+    if not substations_rich:
+        return np.nan, "Unknown", 0, np.nan
+
+    best_eff, best_name, best_kv, best_actual = float("inf"), "Unknown", 0, float("inf")
+    for s in substations_rich:
+        actual_d = haversine(parcel_lat, parcel_lon, s["lat"], s["lon"])
+        mult = VOLTAGE_MULTIPLIER.get(s["voltage_kv"], 1.0)
+        eff_d = actual_d * mult
+        if eff_d < best_eff:
+            best_eff, best_name, best_kv, best_actual = eff_d, s["name"], s["voltage_kv"], actual_d
+    return best_eff, best_name, best_kv, best_actual
 
 
 def gmaps_nearby_search(lat, lon, keyword, radius=8000, api_key=""):
@@ -1419,6 +1679,392 @@ def render_reverse_analysis(api_key, company_row=None, selected_industry=None):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── COMMERCIAL ENGINE FUNCTIONS ───────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_commercial_ecosystem(lat, lon, api_key, radius=2000):
+    """
+    Fetch commercial footprint around a coordinate using Google Places API.
+    Returns a structured dict of counts and place lists.
+    """
+    if not api_key:
+        return {}
+
+    search_map = {
+        "restaurants":  ("restaurant",  None),
+        "malls":        ("shopping_mall", None),
+        "supermarkets": ("supermarket",  None),
+        "banks":        ("bank",         None),
+        "schools":      ("school",       None),
+        "offices":      ("accounting",   "office"),   # type + keyword fallback
+        "transit":      ("transit_station", None),
+        "hotels":       ("lodging",      None),
+        "hospitals":    ("hospital",     None),
+    }
+
+    result = {}
+    place_lists = {}
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+
+    for key, (ptype, pkeyword) in search_map.items():
+        params = {
+            "location": f"{lat},{lon}",
+            "radius": radius,
+            "type": ptype,
+            "key": api_key,
+        }
+        if pkeyword:
+            params["keyword"] = pkeyword
+        try:
+            resp = requests.get(url, params=params, timeout=8)
+            places = resp.json().get("results", [])
+            result[key] = len(places)
+            place_lists[key] = [
+                {
+                    "name": p.get("name", ""),
+                    "lat": p["geometry"]["location"]["lat"],
+                    "lon": p["geometry"]["location"]["lng"],
+                    "rating": p.get("rating", None),
+                    "vicinity": p.get("vicinity", ""),
+                }
+                for p in places[:6]
+            ]
+        except Exception:
+            result[key] = 0
+            place_lists[key] = []
+
+    result["_places"] = place_lists
+    return result
+
+
+def compute_commercial_score(eco, weights, parcel_lat, parcel_lon):
+    """
+    Compute per-dimension commercial scores (0–10) from ecosystem data.
+    Returns a dict of dimension -> score and a final weighted score (0–1, lower=better for rank).
+    """
+    restaurants = eco.get("restaurants", 0)
+    malls       = eco.get("malls", 0)
+    supermarkets= eco.get("supermarkets", 0)
+    banks       = eco.get("banks", 0)
+    schools     = eco.get("schools", 0)
+    offices     = eco.get("offices", 0)
+    transit     = eco.get("transit", 0)
+
+    def clamp(val, mx=10):
+        return min(val, mx)
+
+    scores = {
+        "Footfall":      clamp((restaurants * 0.6 + malls * 1.2) * 1.2),
+        "Visibility":    clamp((malls * 1.5 + (1 if (restaurants + malls) > 5 else 0)) * 1.4),
+        "Accessibility": clamp((banks * 0.8 + transit * 1.5) * 1.2),
+        "Catchment":     clamp((supermarkets * 1.0 + schools * 0.8) * 1.3),
+        "Competition":   clamp(restaurants * 0.5 + malls * 0.3),   # inverse: high = bad
+        "Parking":       clamp(max(0, 8 - restaurants * 0.3)),      # proxy: fewer dense places → easier parking
+    }
+
+    # Competition is inverse: high competition = lower score
+    comp_raw = scores["Competition"]
+    scores["Competition_inv"] = max(0, 10 - comp_raw)
+
+    # Weighted composite (higher = better for commercial, so we invert for sorting like industrial)
+    total_w = sum(weights.values())
+    weighted = (
+        weights["Footfall"]      / total_w * scores["Footfall"]      +
+        weights["Visibility"]    / total_w * scores["Visibility"]     +
+        weights["Accessibility"] / total_w * scores["Accessibility"]  +
+        weights["Competition"]   / total_w * scores["Competition_inv"]+
+        weights["Catchment"]     / total_w * scores["Catchment"]      +
+        weights["Parking"]       / total_w * scores["Parking"]
+    )
+    # Normalise to 0–1 where lower = better (to reuse existing sort logic)
+    final = max(0, 1.0 - (weighted / 10.0))
+    scores["_final"] = final
+    return scores
+
+
+def generate_commercial_reasoning(eco, scores, comm_type):
+    """
+    Generate dynamic WHY THIS WORKS / CHALLENGES based on ecosystem data.
+    Returns (why_list, challenges_list).
+    """
+    restaurants = eco.get("restaurants", 0)
+    malls       = eco.get("malls", 0)
+    supermarkets= eco.get("supermarkets", 0)
+    banks       = eco.get("banks", 0)
+    schools     = eco.get("schools", 0)
+    transit     = eco.get("transit", 0)
+    offices     = eco.get("offices", 0)
+
+    why = []
+    challenges = []
+
+    # Footfall signals
+    if restaurants >= 8:
+        why.append(f"High footfall corridor — {restaurants} restaurants within scan radius confirms sustained foot traffic")
+    elif restaurants >= 4:
+        why.append(f"Moderate footfall — {restaurants} F&B outlets indicate active day-part traffic")
+    else:
+        challenges.append(f"Thin footfall signals — only {restaurants} restaurants found; may need anchor tenant to drive traffic")
+
+    # Retail anchors
+    if malls >= 2:
+        why.append(f"Strong retail anchor presence — {malls} malls/shopping centres create destination draw")
+    elif malls == 1:
+        why.append("Retail anchor nearby — single mall provides halo effect for surrounding commercial activity")
+    else:
+        challenges.append("No mall anchor detected — location must stand alone as a destination; signage and visibility critical")
+
+    # Residential catchment
+    if supermarkets >= 3:
+        why.append(f"Strong residential catchment — {supermarkets} supermarkets confirm dense residential base within radius")
+    elif supermarkets >= 1:
+        why.append(f"Residential catchment present — {supermarkets} supermarket(s) indicate captive neighbourhood consumer base")
+    else:
+        challenges.append("Weak residential catchment — low supermarket density suggests limited walk-in residential traffic")
+
+    # Accessibility / transit
+    if banks >= 4:
+        why.append(f"Well-served by financial infrastructure — {banks} banks confirm mature commercial zone with high transaction activity")
+    if transit >= 2:
+        why.append(f"Good transit connectivity — {transit} transit points support commuter footfall throughout the day")
+    elif transit == 0:
+        challenges.append("No transit nodes detected — car-dependent catchment limits weekday foot traffic and lunchtime trade")
+
+    # Type-specific reasoning
+    if comm_type == "F&B / Cafe":
+        if schools >= 2:
+            why.append(f"{schools} schools nearby — reliable morning/afternoon F&B demand from students and parents")
+        if restaurants >= 6:
+            challenges.append(f"High F&B competition — {restaurants} existing restaurants compress margins and require strong USP")
+        challenges.append("Rental escalation in high-footfall corridors can erode margins within 2–3 years")
+
+    elif comm_type == "Office Space":
+        if offices >= 3:
+            why.append(f"Established office cluster — {offices} offices confirm B2B ecosystem and corporate tenant demand")
+        else:
+            challenges.append("Limited office density — tenant demand may be slow in early occupancy phase")
+        if scores.get("Parking", 0) < 4:
+            challenges.append("Parking score low — dense surroundings may constrain parking availability for tenants")
+
+    elif comm_type == "Retail High Street":
+        if malls >= 1 and restaurants >= 5:
+            why.append("Classic high-street formula — retail anchor + F&B density = strong dwell time and repeat visits")
+        if scores.get("Competition_inv", 10) < 5:
+            challenges.append("High competitive density — differentiated product and brand visibility strategy essential")
+        challenges.append("High street retail faces headwinds from e-commerce; experience-driven offerings are critical")
+
+    challenges.append("Parking constraints are a persistent challenge in high-density commercial corridors")
+    challenges.append("Traffic congestion during peak hours may reduce effective catchment reachability")
+
+    return why[:5], challenges[:4]
+
+
+def render_commercial_ecosystem_scan(lat, lon, comm_type, api_key):
+    """Render the Commercial Live Ecosystem Scan panel."""
+    cdna = COMMERCIAL_DNA[comm_type]
+
+    st.markdown(f"""
+<div class="gmaps-panel">
+  <div class="gmaps-eyebrow">🛰️ Commercial Ecosystem Scan · Google Places API · {comm_type}</div>
+""", unsafe_allow_html=True)
+
+    if not api_key:
+        st.markdown('<div class="no-key-box">API key required for commercial ecosystem scan.</div>',
+                    unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    with st.spinner("Scanning commercial footprint via Google Places…"):
+        eco = get_commercial_ecosystem(lat, lon, api_key, radius=2000)
+
+    if not eco:
+        st.markdown('<div class="no-key-box">No commercial ecosystem data returned. Check API key.</div>',
+                    unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    places_dict = eco.get("_places", {})
+
+    # Category display
+    cat_icons = {
+        "restaurants": "🍽️", "malls": "🏬", "supermarkets": "🛒",
+        "banks": "🏦", "schools": "🏫", "offices": "🏢",
+        "transit": "🚌", "hotels": "🏨", "hospitals": "🏥",
+    }
+    st.markdown('<div class="cat-header">📊 Commercial Density Snapshot</div>', unsafe_allow_html=True)
+    cols = st.columns(3)
+    display_keys = ["restaurants", "malls", "supermarkets", "banks", "transit", "schools"]
+    for i, key in enumerate(display_keys):
+        with cols[i % 3]:
+            count = eco.get(key, 0)
+            icon = cat_icons.get(key, "📍")
+            color = "#4ade80" if count >= 5 else "#fbbf24" if count >= 2 else "#fb923c"
+            st.markdown(
+                f'<div class="drive-card"><div class="drive-label">{icon} {key.title()}</div>'
+                f'<div class="drive-val" style="color:{color};">{count}</div>'
+                f'<div class="drive-unit">within 2km</div></div>',
+                unsafe_allow_html=True
+            )
+
+    # Top places listing
+    st.markdown('<div class="cat-header" style="margin-top:1rem;">📍 Top Detected Places</div>',
+                unsafe_allow_html=True)
+    for cat in ["restaurants", "malls", "supermarkets"]:
+        pl = places_dict.get(cat, [])
+        if pl:
+            st.markdown(f'<div class="cat-header">{cat_icons.get(cat,"📍")} {cat.title()}</div>',
+                        unsafe_allow_html=True)
+            for p in pl[:3]:
+                st.markdown(f"""
+<div class="place-card">
+  <div style="flex:1;"><div class="place-name">{p['name']}</div>
+  <div class="place-meta">{p.get('vicinity','')}</div></div>
+  {'<div class="place-dist">⭐ '+str(p["rating"])+'</div>' if p.get("rating") else ''}
+</div>""", unsafe_allow_html=True)
+
+    # Add to map session state
+    comm_layer_rows = []
+    color_map = {
+        "restaurants": [255, 140, 0, 220],
+        "malls":       [255, 215, 0, 230],
+        "offices":     [30, 120, 255, 210],
+        "schools":     [80, 220, 100, 210],
+        "supermarkets":[200, 80, 220, 200],
+        "banks":       [80, 200, 255, 200],
+    }
+    for cat, color in color_map.items():
+        for p in places_dict.get(cat, []):
+            comm_layer_rows.append({
+                "lat": p["lat"], "lon": p["lon"],
+                "label": f"{cat_icons.get(cat,'📍')} {p['name']} ({cat})",
+                "color": color, "radius": 100,
+            })
+    if comm_layer_rows:
+        st.session_state["live_places_df"] = pd.DataFrame(comm_layer_rows)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    return eco
+
+
+def render_commercial_reverse_analysis(lat, lon, comm_type, api_key):
+    """Render the commercial reverse analysis panel."""
+    st.markdown("""
+<div class="gmaps-panel">
+  <div class="gmaps-eyebrow">🔍 Commercial Reverse Analysis · People-Driven Site Intelligence</div>
+""", unsafe_allow_html=True)
+
+    if not api_key:
+        st.markdown('<div class="no-key-box">API key required.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    col_lat, col_lon = st.columns(2)
+    with col_lat:
+        r_lat = st.number_input("Latitude", value=lat, format="%.5f", key="comm_rev_lat")
+    with col_lon:
+        r_lon = st.number_input("Longitude", value=lon, format="%.5f", key="comm_rev_lon")
+
+    if st.button("🔍 Analyse Commercial Location", key="comm_rev_btn"):
+        with st.spinner("Scanning commercial ecosystem…"):
+            address = gmaps_reverse_geocode(r_lat, r_lon, api_key)
+            eco = get_commercial_ecosystem(r_lat, r_lon, api_key, radius=2000)
+            cdna = COMMERCIAL_DNA[comm_type]
+            scores = compute_commercial_score(eco, cdna["weights"], r_lat, r_lon)
+            why_list, challenge_list = generate_commercial_reasoning(eco, scores, comm_type)
+
+        if address:
+            st.markdown(
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.7rem;color:#c9a84c;margin:0.5rem 0;">'
+                f'📌 {address}</div>', unsafe_allow_html=True
+            )
+
+        # Score summary
+        dim_icons = {"Footfall":"👣","Visibility":"👁️","Accessibility":"🚌",
+                     "Competition":"⚔️","Catchment":"🏘️","Parking":"🅿️"}
+        score_html = ""
+        for dim, icon in dim_icons.items():
+            raw = scores.get(dim, 0)
+            bar_pct = int(raw * 10)
+            col = "#4ade80" if raw >= 7 else "#fbbf24" if raw >= 4 else "#fb923c"
+            score_html += (
+                f'<div class="decision-weight-bar">'
+                f'<div class="decision-weight-label">{icon} {dim}</div>'
+                f'<div class="decision-weight-track">'
+                f'<div style="width:{bar_pct}%;background:{col};height:5px;border-radius:4px;"></div></div>'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#e8e0d0;width:26px;text-align:right;">{raw:.1f}</div>'
+                f'</div>'
+            )
+        st.markdown(
+            f'<div class="reasoning-card"><div class="reasoning-section">Commercial Dimension Scores</div>'
+            f'{score_html}</div>', unsafe_allow_html=True
+        )
+
+        # WHY + CHALLENGES
+        why_html = "".join(
+            f'<div class="wins-item"><div class="wins-dot"></div>{w}</div>' for w in why_list
+        )
+        st.markdown(
+            f'<div class="wins-card"><div class="wins-eyebrow">✅ Why This Location Works</div>{why_html}</div>',
+            unsafe_allow_html=True
+        )
+        chal_html = "".join(
+            f'<div class="missing-item"><div class="missing-dot"></div>{c}</div>' for c in challenge_list
+        )
+        st.markdown(
+            f'<div class="missing-card"><div class="missing-eyebrow">⚠️ Challenges to Address</div>{chal_html}</div>',
+            unsafe_allow_html=True
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_commercial_drive_times(lat, lon, api_key):
+    """Render drive times to key commercial nodes."""
+    st.markdown("""
+<div class="gmaps-panel">
+  <div class="gmaps-eyebrow">🚗 Commercial Catchment Drive Times · Google Distance Matrix</div>
+""", unsafe_allow_html=True)
+
+    if not api_key:
+        st.markdown('<div class="no-key-box">API key required.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    # Key commercial destinations in Coimbatore
+    destinations = [
+        (11.017, 77.026, "🏬 Brookefields Mall"),
+        (11.004, 76.963, "🏬 Prozone Mall"),
+        (11.016, 77.001, "🚌 Gandhipuram Bus Stand"),
+        (11.004, 77.029, "🏙️ RS Puram Commercial"),
+        (11.0305, 77.0435, "✈️ Coimbatore Airport"),
+    ]
+
+    with st.spinner("Fetching commercial catchment drive times…"):
+        results = gmaps_distance_matrix(lat, lon, destinations, api_key=api_key)
+
+    if not results:
+        st.markdown('<div class="no-key-box">Could not fetch drive times.</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    drive_cards = "".join(
+        f'<div class="drive-card"><div class="drive-label">{r["label"]}</div>'
+        f'<div class="drive-val">{r["duration_text"]}</div>'
+        f'<div class="drive-unit">{r["distance_text"]}</div></div>'
+        for r in results
+    )
+    st.markdown(f'<div class="drive-grid" style="grid-template-columns:repeat(3,1fr);">{drive_cards}</div>',
+                unsafe_allow_html=True)
+    st.markdown(
+        '<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#1a3050;margin-top:0.5rem;">'
+        'Drive times to major commercial nodes · Driving mode · Google Distance Matrix</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 # ── UTILS ────────────────────────────────────────────────────────────────────────
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
@@ -1544,47 +2190,185 @@ def check_compliance(row, constraints):
 # ── DATA LOADING ─────────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def load_all():
+    """
+    Load all intelligence layers.
+
+    Priority order:
+      1. Google Maps API  — live, always-fresh data (water, railway, SIDCO, corridor)
+      2. CSV fallback     — used only if API key missing OR API returns empty results
+      3. Hardcoded        — substations, highway junctions, ICD (specific/official data)
+
+    empty_land.csv is always required (proprietary parcel data, no API equivalent).
+    workforce and incentive CSVs are kept (government data, no API equivalent).
+    """
     problems = []
+    api_key = GOOGLE_MAPS_API_KEY  # available at module scope
 
-    # Land
+    # ── Land (from output_with_coordinates.xlsx) ─────────────────────────────
     land = None
+    INVENTORY_FILE = "output_with_coordinates.xlsx"
     try:
-        land = pd.read_csv("empty_land.csv", on_bad_lines="skip", engine="python")
-        land.columns = [c.strip().lower() for c in land.columns]
-        lat_c = detect_col(land,["lat","latitude"]); lon_c = detect_col(land,["lon","longitude","long"])
-        if lat_c and lat_c!="lat": land=land.rename(columns={lat_c:"lat"})
-        if lon_c and lon_c!="lon": land=land.rename(columns={lon_c:"lon"})
-        land["lat"]=pd.to_numeric(land["lat"],errors="coerce"); land["lon"]=pd.to_numeric(land["lon"],errors="coerce")
-        land = land.dropna(subset=["lat","lon"])
-    except Exception as e: problems.append(f"empty_land.csv: {e}")
+        land = pd.read_excel(INVENTORY_FILE, engine="openpyxl")
+        land.columns = land.columns.str.strip()
 
-    # Water
+        # Rename coordinate columns to internal names expected by the app
+        land = land.rename(columns={"Latitude": "lat", "Longitude": "lon"})
+
+        # Convert lat/lon to float
+        land["lat"] = pd.to_numeric(land["lat"], errors="coerce")
+        land["lon"] = pd.to_numeric(land["lon"], errors="coerce")
+
+        # If lat/lon are missing but Expanded_URL is present, extract from URL
+        # Google Maps short-URL pattern: !3d<lat>!4d<lon>
+        if land["lat"].isna().all() and "Expanded_URL" in land.columns:
+            import re as _re
+            def _extract_coords(url):
+                if not isinstance(url, str):
+                    return None, None
+                m = _re.search(r"!3d([\d.\-]+)!4d([\d.\-]+)", url)
+                if m:
+                    return float(m.group(1)), float(m.group(2))
+                return None, None
+            coords = land["Expanded_URL"].apply(_extract_coords)
+            land["lat"] = coords.apply(lambda c: c[0])
+            land["lon"] = coords.apply(lambda c: c[1])
+
+        # Drop rows without valid coordinates
+        land = land.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+
+        # The file already has Property ID and GOOGLE MAP columns;
+        # if not present, fall back to Expanded_URL so detect_col() still works.
+        if "Property ID" not in land.columns:
+            land["Property ID"] = land.get(
+                "Expanded_URL",
+                pd.Series(["Parcel " + str(i + 1) for i in range(len(land))])
+            )
+        if "GOOGLE MAP" not in land.columns:
+            land["GOOGLE MAP"] = land.get("Expanded_URL", "")
+
+        # ── Parse Acres from "Land Area" — handles Acres, Cents, Sqft ─────────
+        import re as _re2
+        def _parse_acres(val):
+            """
+            Convert messy land area strings to decimal acres.
+            Handles: '3.5 Acres', '74 Cents', '25cent', '1745 Sqft',
+                     '7 Acres + 2 Acres', '63+10acres', '10+ Acres', etc.
+            1 Acre = 100 Cents = 43560 Sqft
+            """
+            if pd.isna(val) or str(val).strip() == "":
+                return None
+            s = str(val).strip().lower()
+            # Detect unit — order matters: check cent before acre
+            if _re2.search(r"\d\s*cents?\b|\bcents?\b", s):
+                unit = "cent"
+            elif _re2.search(r"\bsqft\b|\bsq\.?\s*ft\b|\bsquare\s*feet\b", s):
+                unit = "sqft"
+            elif _re2.search(r"\d\s*acres?\b|\bacres?\b", s):
+                unit = "acre"
+            else:
+                unit = "acre"  # default
+            nums = _re2.findall(r"\d+\.?\d*", s)
+            if not nums:
+                return None
+            total = sum(float(n) for n in nums)
+            if unit == "cent":
+                return round(total / 100.0, 4)
+            elif unit == "sqft":
+                return round(total / 43560.0, 4)
+            else:
+                return round(total, 4)
+
+        _area_col = detect_col(land, ["Acres", "Land Area", "area", "land_area", "size"])
+        if _area_col:
+            land["Acres"] = land[_area_col].map(_parse_acres)
+        elif "Acres" not in land.columns:
+            land["Acres"] = None
+
+        # ── Parse Price from "QUOTED PRICE" — extract leading number ─────────
+        # Values like "Rs.8 Cr Per Acre", "Rs.25 Lakh per cent", "NOT APPLICABLE"
+        def _parse_price(val):
+            if pd.isna(val): return None
+            s = str(val).strip()
+            if s.upper() in ("NOT APPLICABLE", "N/A", "NA", "-", ""): return None
+            m = _re2.search(r"(\d+\.?\d*)", s)
+            return float(m.group(1)) if m else None
+
+        _price_col = detect_col(land, ["Price", "QUOTED PRICE", "price", "quoted_price", "cost"])
+        if _price_col:
+            land["Price"] = land[_price_col].map(_parse_price)
+        elif "Price" not in land.columns:
+            land["Price"] = None
+
+        # ── Price per Acre ────────────────────────────────────────────────────
+        if "Acres" in land.columns and "Price" in land.columns:
+            land["Price_per_Acre"] = land.apply(
+                lambda r: round(r["Price"] / r["Acres"], 4)
+                if pd.notna(r.get("Price")) and pd.notna(r.get("Acres")) and r["Acres"] > 0
+                else None,
+                axis=1
+            )
+
+        if land.empty:
+            problems.append("No parcels found in output_with_coordinates.xlsx after cleaning.")
+
+    except FileNotFoundError:
+        problems.append(f"'{INVENTORY_FILE}' not found — place it in the app folder.")
+        land = None
+    except Exception as e:
+        problems.append(f"Inventory load error: {e}")
+        land = None
+
+    # ── Water Bodies — API first, CSV fallback ────────────────────────────────
     water = None
-    try:
-        water = pd.read_csv("water_bodies.csv", on_bad_lines="skip", engine="python")
-        water.columns = [c.strip().lower() for c in water.columns]
-        wlat=detect_col(water,["lat","latitude"]); wlon=detect_col(water,["lon","longitude","long"])
-        if wlat and wlat!="latitude": water=water.rename(columns={wlat:"latitude"})
-        if wlon and wlon!="longitude": water=water.rename(columns={wlon:"longitude"})
-        water["latitude"]=pd.to_numeric(water["latitude"],errors="coerce")
-        water["longitude"]=pd.to_numeric(water["longitude"],errors="coerce")
-        water = water.dropna(subset=["latitude","longitude"])
-    except Exception as e: problems.append(f"water_bodies.csv: {e}")
-
-    # Corridors
-    corridor_frames = []
-    for fname in ["corridor_1.csv","corridor_2.csv"]:
+    if api_key:
         try:
-            d = pd.read_csv(fname, on_bad_lines="skip", engine="python")
-            d.columns = [c.strip().lower() for c in d.columns]
-            clat=detect_col(d,["lat","latitude"]); clon=detect_col(d,["lon","longitude","long"])
-            if clat: d=d.rename(columns={clat:"latitude"})
-            if clon: d=d.rename(columns={clon:"longitude"})
-            d["latitude"]=pd.to_numeric(d.get("latitude",pd.Series(dtype=float)),errors="coerce")
-            d["longitude"]=pd.to_numeric(d.get("longitude",pd.Series(dtype=float)),errors="coerce")
-            d = d.dropna(subset=["latitude","longitude"]); corridor_frames.append(d)
-        except Exception as e: problems.append(f"{fname}: {e}")
-    corridor = pd.concat(corridor_frames,ignore_index=True) if corridor_frames else pd.DataFrame()
+            water_api = gmaps_fetch_water_bodies(api_key)
+            if not water_api.empty:
+                water = water_api
+        except Exception as e:
+            problems.append(f"Water API: {e}")
+
+    if water is None or water.empty:
+        try:
+            water = pd.read_csv("water_bodies.csv", on_bad_lines="skip", engine="python")
+            water.columns = [c.strip().lower() for c in water.columns]
+            wlat=detect_col(water,["lat","latitude"]); wlon=detect_col(water,["lon","longitude","long"])
+            if wlat and wlat!="latitude": water=water.rename(columns={wlat:"latitude"})
+            if wlon and wlon!="longitude": water=water.rename(columns={wlon:"longitude"})
+            water["latitude"]=pd.to_numeric(water["latitude"],errors="coerce")
+            water["longitude"]=pd.to_numeric(water["longitude"],errors="coerce")
+            water = water.dropna(subset=["latitude","longitude"])
+        except Exception:
+            problems.append("Water: no API results and water_bodies.csv not found — water distance will use defaults")
+
+    # ── Corridor Companies — API first, CSV fallback ──────────────────────────
+    # The selected industry isn't known here, so we load a general industrial set.
+    # fetch_top_companies() (called per-parcel with specific industry) remains the
+    # primary per-parcel source; this corridor set is used for sidebar statistics.
+    corridor = pd.DataFrame()
+    if api_key:
+        try:
+            corridor_api = gmaps_fetch_corridor_companies(api_key, industry="Precision Engineering")
+            if not corridor_api.empty:
+                corridor = corridor_api
+        except Exception as e:
+            problems.append(f"Corridor API: {e}")
+
+    if corridor.empty:
+        corridor_frames = []
+        for fname in ["corridor_1.csv","corridor_2.csv"]:
+            try:
+                d = pd.read_csv(fname, on_bad_lines="skip", engine="python")
+                d.columns = [c.strip().lower() for c in d.columns]
+                clat=detect_col(d,["lat","latitude"]); clon=detect_col(d,["lon","longitude","long"])
+                if clat: d=d.rename(columns={clat:"latitude"})
+                if clon: d=d.rename(columns={clon:"longitude"})
+                d["latitude"]=pd.to_numeric(d.get("latitude",pd.Series(dtype=float)),errors="coerce")
+                d["longitude"]=pd.to_numeric(d.get("longitude",pd.Series(dtype=float)),errors="coerce")
+                d = d.dropna(subset=["latitude","longitude"]); corridor_frames.append(d)
+            except Exception as e: problems.append(f"{fname}: {e}")
+        corridor = pd.concat(corridor_frames,ignore_index=True) if corridor_frames else pd.DataFrame()
+
     if not corridor.empty:
         ind_col = detect_col(corridor,["industry","industry category","industrial sector","business type","business","sector","type","category","activity"])
         if ind_col and ind_col!="industry": corridor=corridor.rename(columns={ind_col:"industry"})
@@ -1592,49 +2376,77 @@ def load_all():
             str_cols=[c for c in corridor.columns if corridor[c].dtype==object]
             corridor["industry"]=corridor[str_cols[0]] if str_cols else ""
 
-    # Substations
-    substations = [(r[0],r[1]) for r in KNOWN_SUBSTATIONS]
-    sub_names   = [r[2] for r in KNOWN_SUBSTATIONS]
-    sub_full    = list(KNOWN_SUBSTATIONS)
+    # ── Substations — API fetch merged with hardcoded KNOWN_SUBSTATIONS ─────────
+    # substations_rich: list of dicts with lat, lon, name, voltage_kv, source
+    # substations: list of (lat, lon) tuples — kept for backward compat
+    substations_rich = []
+    if api_key:
+        try:
+            substations_rich = gmaps_fetch_substations(api_key)
+        except Exception as e:
+            problems.append(f"Substation API: {e}")
 
-    # Railway
+    if not substations_rich:
+        # Fallback: use KNOWN_SUBSTATIONS with parsed voltages
+        for lat, lon, name in KNOWN_SUBSTATIONS:
+            vm = re.search(r"(\d{2,3})\s*k[vV]", name, re.I)
+            voltage = int(vm.group(1)) if vm else 110
+            substations_rich.append({"lat": lat, "lon": lon, "name": name,
+                                      "voltage_kv": voltage, "source": "known"})
+
+    substations = [(s["lat"], s["lon"]) for s in substations_rich]
+    sub_names   = [s["name"] for s in substations_rich]
+    sub_full    = [(s["lat"], s["lon"], s["name"]) for s in substations_rich]
+
+    # ── Railway Stations — API first, CSV fallback ────────────────────────────
     rail_stations, rail_df = [], pd.DataFrame()
-    try:
-        rail_candidates=["Railway_stations.csv","railway_stations.csv","Railway_Stations.csv"]
-        rail_file = next((f for f in rail_candidates if os.path.isfile(f)),None)
-        if not rail_file: raise FileNotFoundError("No Railway file")
-        rail_df = load_wkt_csv(rail_file)
-        if not rail_df.empty:
-            rail_df["station_name"]=rail_df["name"].fillna("Railway Station")
-            rail_stations = list(zip(rail_df["_lat"],rail_df["_lon"]))
-    except Exception as e: problems.append(f"Railway: {e}")
+    if api_key:
+        try:
+            rail_stations_api, rail_df_api = gmaps_fetch_railway_stations(api_key)
+            if rail_stations_api:
+                rail_stations, rail_df = rail_stations_api, rail_df_api
+        except Exception as e:
+            problems.append(f"Railway API: {e}")
 
-    # SIDCO
+    if not rail_stations:
+        try:
+            rail_candidates=["Railway_stations.csv","railway_stations.csv","Railway_Stations.csv"]
+            rail_file = next((f for f in rail_candidates if os.path.isfile(f)),None)
+            if not rail_file: raise FileNotFoundError("No Railway file")
+            rail_df = load_wkt_csv(rail_file)
+            if not rail_df.empty:
+                rail_df["station_name"]=rail_df["name"].fillna("Railway Station")
+                rail_stations = list(zip(rail_df["_lat"],rail_df["_lon"]))
+        except Exception as e: problems.append(f"Railway CSV: {e}")
+
+    # ── SIDCO Estates — API first, CSV fallback ───────────────────────────────
     sidco = pd.DataFrame()
-    try:
-        sidco_candidates=["SIDCO_industrial_estates_coimbatore.csv","SIDCO_industrial_estates_coimbatore_xlsx.csv","sidco_estates.csv"]
-        sidco_file = next((f for f in sidco_candidates if os.path.isfile(f)),None)
-        if not sidco_file: raise FileNotFoundError("No SIDCO file")
-        sidco = load_wkt_csv(sidco_file)
-        if not sidco.empty: sidco=sidco.rename(columns={"_lat":"latitude","_lon":"longitude"})
-    except Exception as e: problems.append(f"SIDCO: {e}")
+    if api_key:
+        try:
+            sidco_api = gmaps_fetch_sidco_estates(api_key)
+            if not sidco_api.empty:
+                sidco = sidco_api
+        except Exception as e:
+            problems.append(f"SIDCO API: {e}")
 
-    # Highway junctions
-    highway_junctions, highway_coords = [], []
-    try:
-        with open("Highway_junctions.csv","r",encoding="utf-8") as f:
-            f.readline()
-            for line in f:
-                line=line.strip()
-                if not line: continue
-                name = line.split(",")[0].strip()
-                if name: highway_junctions.append(name)
-        highway_coords = [(HIGHWAY_COORDS_MAP[n][0],HIGHWAY_COORDS_MAP[n][1])
-                          for n in highway_junctions if n in HIGHWAY_COORDS_MAP]
-    except Exception as e: problems.append(f"Highway: {e}")
+    if sidco.empty:
+        try:
+            sidco_candidates=["SIDCO_industrial_estates_coimbatore.csv","SIDCO_industrial_estates_coimbatore_xlsx.csv","sidco_estates.csv"]
+            sidco_file = next((f for f in sidco_candidates if os.path.isfile(f)),None)
+            if not sidco_file: raise FileNotFoundError("No SIDCO file")
+            sidco = load_wkt_csv(sidco_file)
+            if not sidco.empty: sidco=sidco.rename(columns={"_lat":"latitude","_lon":"longitude"})
+        except Exception as e: problems.append(f"SIDCO CSV: {e}")
 
-    # ICD
+    # ── Highway Junctions — fully hardcoded via HIGHWAY_COORDS_MAP ───────────
+    # No CSV file needed: all junction names and coordinates are in the constant above.
+    highway_junctions = list(HIGHWAY_COORDS_MAP.keys())
+    highway_coords    = [(v[0], v[1]) for v in HIGHWAY_COORDS_MAP.values()]
+
+    # ── ICD / Dry Ports — hardcoded (highly specific known locations) ─────────
+    # Falls back to CSV if present, otherwise uses ICD_HARDCODED constant.
     icd_points = []
+    icd_loaded_from_csv = False
     try:
         icd_candidates=["icd_irugur.csv","ICD_irugur.csv","icd.csv"]
         icd_file = next((f for f in icd_candidates if os.path.isfile(f)),None)
@@ -1647,8 +2459,11 @@ def load_all():
                 for _,row in icd_df.iterrows():
                     try: icd_points.append((float(row[lat_c]),float(row[lon_c]),str(row[name_c]) if name_c else "ICD"))
                     except Exception: pass
-        else: problems.append("icd_irugur.csv not found")
-    except Exception as e: problems.append(f"ICD: {e}")
+                icd_loaded_from_csv = True
+    except Exception as e: problems.append(f"ICD CSV: {e}")
+
+    if not icd_points:
+        icd_points = list(ICD_HARDCODED)
 
     # Workforce
     workforce_df = pd.DataFrame()
@@ -1681,8 +2496,130 @@ def load_all():
     except Exception as e: problems.append(f"Incentive: {e}")
 
     return (land, water, corridor, substations, sub_names, sub_full,
-            rail_stations, rail_df, sidco, highway_junctions, highway_coords,
+            substations_rich, rail_stations, rail_df, sidco, highway_junctions, highway_coords,
             icd_points, workforce_df, incentive_df, problems)
+
+
+@st.cache_data(show_spinner=False)
+def load_commercial_data():
+    """
+    Load commercial inventory from output_commercial_with_coordinates.xlsx.
+    Extracts lat/lon from Expanded_URL if Latitude/Longitude columns are empty.
+    Parses Sq.ft from 'Area In SQ.ft/ Cent/ Acre' column.
+    Returns (comm_land_df, problems_list).
+    """
+    problems = []
+    COMM_FILE = "output_commercial_with_coordinates.xlsx"
+    try:
+        df = pd.read_excel(COMM_FILE, engine="openpyxl")
+        df.columns = df.columns.str.strip()
+
+        # ── Extract lat/lon from Expanded_URL ──────────────────────────────────
+        def _extract_coords_comm(url):
+            if not isinstance(url, str):
+                return None, None
+            # Pattern 1: !3d<lat>!4d<lon>
+            m = re.search(r"!3d([\d.\-]+)!4d([\d.\-]+)", url)
+            if m:
+                return float(m.group(1)), float(m.group(2))
+            # Pattern 2: ?q=<lat>,<lon>
+            m2 = re.search(r"[?&]q=([\d.\-]+),([\d.\-]+)", url)
+            if m2:
+                return float(m2.group(1)), float(m2.group(2))
+            # Pattern 3: /maps/place/<lat>,<lon>
+            m3 = re.search(r"/maps/place/([\d.\-]+),([\d.\-]+)", url)
+            if m3:
+                return float(m3.group(1)), float(m3.group(2))
+            return None, None
+
+        # Try existing Latitude/Longitude columns first; fall back to URL extraction
+        lat_col = detect_col(df, ["Latitude", "lat"])
+        lon_col = detect_col(df, ["Longitude", "lon", "long"])
+        if lat_col:
+            df["lat"] = pd.to_numeric(df[lat_col], errors="coerce")
+        if lon_col:
+            df["lon"] = pd.to_numeric(df[lon_col], errors="coerce")
+
+        if "lat" not in df.columns or df["lat"].isna().all():
+            df["lat"] = None
+            df["lon"] = None
+
+        if "Expanded_URL" in df.columns:
+            mask = df["lat"].isna() | df["lon"].isna()
+            if mask.any():
+                extracted = df.loc[mask, "Expanded_URL"].apply(_extract_coords_comm)
+                df.loc[mask, "lat"] = extracted.apply(lambda c: c[0])
+                df.loc[mask, "lon"] = extracted.apply(lambda c: c[1])
+
+        df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+        df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+        df = df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+
+        # ── Parse Sq.ft from area column ───────────────────────────────────────
+        area_raw_col = detect_col(df, ["Area In SQ.ft/ Cent/ Acre", "Area In SQ.ft", "area", "sqft", "sq.ft"])
+
+        def _parse_sqft(val):
+            if pd.isna(val) or str(val).strip() == "":
+                return None
+            s = str(val).strip().lower()
+            nums = re.findall(r"\d+\.?\d*", s)
+            if not nums:
+                return None
+            total = sum(float(n) for n in nums)
+            if re.search(r"cent", s):
+                return round(total * 435.6, 1)   # cents → sqft
+            elif re.search(r"acre", s):
+                return round(total * 43560, 1)   # acres → sqft
+            else:
+                return round(total, 1)            # already sqft
+
+        if area_raw_col:
+            df["Sq.ft"] = df[area_raw_col].map(_parse_sqft)
+        else:
+            df["Sq.ft"] = None
+
+        # ── Normalise key columns ───────────────────────────────────────────────
+        rent_col = detect_col(df, ["If Rental! Whats the rent", "Total Price (Rent / Sale / Lease)", "rent"])
+        if rent_col:
+            df["Rent"] = df[rent_col].astype(str).str.strip().replace("nan", "—")
+        else:
+            df["Rent"] = "—"
+
+        village_col = detect_col(df, ["Village Name", "village", "location", "area"])
+        if village_col:
+            df["Village Name"] = df[village_col].astype(str).str.strip()
+        else:
+            df["Village Name"] = "—"
+
+        type_col = detect_col(df, ["Property / Service Type", "Property Type", "type"])
+        if type_col:
+            df["Property/Service Type"] = df[type_col].astype(str).str.strip()
+        else:
+            df["Property/Service Type"] = "—"
+
+        facing_col = detect_col(df, ["Property Facing", "Facing", "facing"])
+        if facing_col:
+            df["Facing"] = df[facing_col].astype(str).str.strip()
+        else:
+            df["Facing"] = "—"
+
+        # Facade Photo is the primary drive link column (contains one or more Google Drive URLs)
+        drive_col = detect_col(df, ["Facade Photo", "Presentation Drive Link", "Road View Photo"])
+        if drive_col:
+            # Store raw value; rendering will split multi-link entries
+            df["Google Drive Link"] = df[drive_col].astype(str).str.strip()
+        else:
+            df["Google Drive Link"] = "—"
+
+        if df.empty:
+            problems.append("No commercial parcels with valid coordinates found.")
+
+        return df, problems
+
+    except FileNotFoundError:
+        return pd.DataFrame(), [f"'{COMM_FILE}' not found — place it in the app folder."]
+    except Exception as e:
+        return pd.DataFrame(), [f"Commercial data load error: {e}"]
 
 
 # ── BRANDING HEADER ── Lands & Lands · Deep Navy + Gold ─────────────────────────
@@ -1692,14 +2629,14 @@ st.markdown("""
   <div style="display:flex;align-items:center;gap:1.5rem;padding:1.2rem 2rem;">
     <div style="flex:1;min-width:0;">
       <div style="font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#c9a84c;letter-spacing:3px;margin-bottom:0.25rem;">LANDS &amp; LANDS</div>
-      <div style="font-family:Syne,sans-serif;font-size:1.8rem;font-weight:800;color:#e2c97a;letter-spacing:-0.5px;line-height:1.05;margin-bottom:0.25rem;">Industrial Intelligence Engine</div>
-      <div style="font-family:monospace;font-size:0.65rem;color:#5a5040;letter-spacing:0.8px;">AI-powered industrial site selection &amp; cluster intelligence platform</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.8rem;font-weight:800;color:#e2c97a;letter-spacing:-0.5px;line-height:1.05;margin-bottom:0.25rem;">Dual-Mode Location Intelligence Platform</div>
+      <div style="font-family:monospace;font-size:0.65rem;color:#5a5040;letter-spacing:0.8px;">Industrial · Commercial · AI-powered site selection &amp; ecosystem intelligence</div>
     </div>
     <div style="flex-shrink:0;text-align:right;border-left:1px solid #2a2010;padding-left:1.5rem;">
       <div style="font-family:monospace;font-size:0.52rem;color:#3a2e14;letter-spacing:2.5px;text-transform:uppercase;line-height:2.2;">
         <span style="color:#c9a84c;font-size:0.7rem;font-weight:600;">CBE</span><br>
-        Industrial Site<br>Selection Platform<br>
-        <span style="color:#c9a84c;font-size:0.6rem;">&#9658; v1.0</span>
+        Intelligence<br>Platform<br>
+        <span style="color:#c9a84c;font-size:0.6rem;">&#9658; v2.0</span>
       </div>
     </div>
   </div>
@@ -1707,24 +2644,55 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ── MODE SWITCHER ─────────────────────────────────────────────────────────────────
+mode = st.radio(
+    "Select Intelligence Engine",
+    ["🏭 Industrial", "🏢 Commercial"],
+    horizontal=True,
+    key="engine_mode"
+)
+
 # ── HEADER ────────────────────────────────────────────────────────────────────────
-st.title("CBE Industrial Intelligence Engine")
-st.markdown('<p style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#c9a84c40;'
-            'letter-spacing:2px;margin-top:-0.3rem;">'
-            'LAND · INFRASTRUCTURE · ECOSYSTEM · WORKFORCE · INCENTIVES · INDUSTRY LOGIC · LIVE MAPS</p>',
-            unsafe_allow_html=True)
+if mode == "🏭 Industrial":
+    st.title("⚙️ Lands & Lands Industrial Intelligence Engine")
+    st.markdown('<p style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#c9a84c40;'
+                'letter-spacing:2px;margin-top:-0.3rem;">'
+                'LAND · INFRASTRUCTURE · ECOSYSTEM · WORKFORCE · INCENTIVES · INDUSTRY LOGIC · LIVE MAPS</p>',
+                unsafe_allow_html=True)
+else:
+    st.title("🏢 Lands & Lands Commercial Intelligence Engine")
+    st.markdown('<p style="font-family:JetBrains Mono,monospace;font-size:0.72rem;color:#c9a84c40;'
+                'letter-spacing:2px;margin-top:-0.3rem;">'
+                'FOOTFALL · VISIBILITY · ACCESSIBILITY · COMPETITION · CATCHMENT · PARKING · LIVE MAPS</p>',
+                unsafe_allow_html=True)
 
 with st.spinner("🔄 Loading all intelligence layers…"):
     (land, water, corridor, substations, sub_names, sub_full,
-     rail_stations, rail_df, sidco, highway_junctions, highway_coords,
+     substations_rich, rail_stations, rail_df, sidco, highway_junctions, highway_coords,
      icd_points, workforce_df, incentive_df, problems) = load_all()
 
-if problems:
+# ── Load commercial data if in Commercial mode ────────────────────────────────
+comm_land = pd.DataFrame()
+comm_problems = []
+if mode == "🏢 Commercial":
+    with st.spinner("🔄 Loading commercial inventory…"):
+        comm_land, comm_problems = load_commercial_data()
+
+all_problems = problems + comm_problems
+if all_problems:
     with st.expander("⚠️ Data notices", expanded=False):
-        for p in problems: st.caption(f"• {p}")
+        for p in all_problems: st.caption(f"• {p}")
+
+# ── DEBUG: Inventory viewer ───────────────────────────────────────────────────
+if land is not None and not land.empty:
+    with st.expander("🗂️ Show Inventory (debug)", expanded=False):
+        st.caption(f"{len(land)} Industrial parcels loaded · columns: {list(land.columns)}")
+        st.dataframe(land.head(20), use_container_width=True)
 
 if land is None or land.empty:
-    st.error("❌ Cannot load empty_land.csv."); st.stop()
+    st.error("❌ Cannot load inventory. Ensure 'output_with_coordinates.xlsx' is in the app folder "
+             "and has 'Latitude' and 'Longitude' columns.")
+    st.stop()
 
 # Load API key once
 GMAPS_KEY = get_gmaps_key()
@@ -1739,73 +2707,181 @@ with st.sidebar:
                 'letter-spacing:2px;margin-bottom:1rem;">INDUSTRIAL SITE INTELLIGENCE v4 · MAPS EDITION</div>', unsafe_allow_html=True)
     st.divider()
 
-    st.markdown('<span class="sidebar-label">Industry Type</span>', unsafe_allow_html=True)
-    industry = st.selectbox("", list(INDUSTRY_DNA.keys()),
-                            format_func=lambda x: f"{INDUSTRY_DNA[x]['icon']}  {x}",
-                            label_visibility="collapsed")
-    dna = INDUSTRY_DNA[industry]
-    st.markdown(f'<div style="font-family:JetBrains Mono,monospace;font-size:0.66rem;color:#c9a84c60;'
-                f'background:#0a1018;border:1px solid #0c2040;border-radius:8px;padding:0.5rem 0.8rem;'
-                f'margin-top:0.4rem;line-height:1.6;">{dna["desc"]}</div>', unsafe_allow_html=True)
+    if mode == "🏭 Industrial":
+        st.markdown('<span class="sidebar-label">Industry Type</span>', unsafe_allow_html=True)
+        industry = st.selectbox("", list(INDUSTRY_DNA.keys()),
+                                format_func=lambda x: f"{INDUSTRY_DNA[x]['icon']}  {x}",
+                                label_visibility="collapsed", key="ind_type_select")
+        dna = INDUSTRY_DNA[industry]
+        comm_type = None
+        cdna = {}
+        st.markdown(f'<div style="font-family:JetBrains Mono,monospace;font-size:0.66rem;color:#c9a84c60;'
+                    f'background:#0a1018;border:1px solid #0c2040;border-radius:8px;padding:0.5rem 0.8rem;'
+                    f'margin-top:0.4rem;line-height:1.6;">{dna["desc"]}</div>', unsafe_allow_html=True)
+
+        # ── LAND SIZE FILTER DROPDOWN (directly below Industry Type) ─────────
+        st.divider()
+        st.markdown('<span class="sidebar-label">🔎 Filter by Land Size</span>', unsafe_allow_html=True)
+        _acres_all = land["Acres"].dropna() if land is not None and "Acres" in land.columns else pd.Series(dtype=float)
+        if not _acres_all.empty:
+            _ac_max = float(_acres_all.max())
+            _bucket_edges = [0, 2, 5, 10, 15, 25, 50, 100, 250, 500]
+            if _ac_max > _bucket_edges[-1]:
+                _bucket_edges.append(int(_ac_max) + 1)
+            _acre_options = ["— Select Land Size —"]
+            for i in range(len(_bucket_edges) - 1):
+                lo, hi = _bucket_edges[i], _bucket_edges[i + 1]
+                count_in_bucket = int(_acres_all.between(lo, hi).sum())
+                if count_in_bucket > 0:
+                    _acre_options.append(f"{lo}–{hi} Acres  ({count_in_bucket} parcels)")
+            _selected_acre_range = st.selectbox(
+                "Select required land size",
+                _acre_options,
+                index=0,
+                key="filter_acre_range",
+            )
+        else:
+            _selected_acre_range = None
+            st.caption("Acres data unavailable")
+
+    else:
+        st.markdown('<span class="sidebar-label">Commercial Type</span>', unsafe_allow_html=True)
+        comm_type = st.selectbox("", list(COMMERCIAL_DNA.keys()),
+                                 format_func=lambda x: f"{COMMERCIAL_DNA[x]['icon']}  {x}",
+                                 label_visibility="collapsed", key="comm_type_select")
+        cdna = COMMERCIAL_DNA[comm_type]
+        industry = None
+        dna = {}
+        st.markdown(f'<div style="font-family:JetBrains Mono,monospace;font-size:0.66rem;color:#c9a84c60;'
+                    f'background:#0a1018;border:1px solid #0c2040;border-radius:8px;padding:0.5rem 0.8rem;'
+                    f'margin-top:0.4rem;line-height:1.6;">{cdna["description"]}</div>', unsafe_allow_html=True)
+
+        # ── COMMERCIAL SIZE FILTER (Sq.ft) — right below type dropdown ───────
+        st.divider()
+        st.markdown('<span class="sidebar-label">🔎 Filter by Size (Sq.ft)</span>', unsafe_allow_html=True)
+        _comm_data_tmp, _ = load_commercial_data()
+        _sqft_all = _comm_data_tmp["Sq.ft"].dropna() if not _comm_data_tmp.empty and "Sq.ft" in _comm_data_tmp.columns else pd.Series(dtype=float)
+        if not _sqft_all.empty:
+            _sqft_buckets = [0, 1000, 3000, 5000, 10000, 20000, 50000]
+            _sqft_max = float(_sqft_all.max())
+            if _sqft_max > _sqft_buckets[-1]:
+                _sqft_buckets.append(int(_sqft_max) + 1)
+            _sqft_options = ["— Select Size —"]
+            for i in range(len(_sqft_buckets) - 1):
+                lo, hi = _sqft_buckets[i], _sqft_buckets[i + 1]
+                count_b = int(_sqft_all.between(lo, hi).sum())
+                if count_b > 0:
+                    _sqft_options.append(f"{lo}–{hi} sq.ft  ({count_b} parcels)")
+            _selected_sqft_range = st.selectbox(
+                "Select required size",
+                _sqft_options,
+                index=0,
+                key="filter_sqft_range",
+            )
+        else:
+            _selected_sqft_range = None
+            st.caption("Sq.ft data unavailable")
+
+        # Commercial weight bars
+        st.divider()
+        st.markdown('<span class="sidebar-label">Weight Profile</span>', unsafe_allow_html=True)
+        for dim, val in cdna["weights"].items():
+            pct = int(val * 100)
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#4a6080;width:100px;">{dim}</div>'
+                f'<div style="flex:1;background:#0d1525;border-radius:4px;height:5px;">'
+                f'<div style="width:{pct}%;background:linear-gradient(90deg,#c9a84c,#a07840);height:5px;border-radius:4px;"></div></div>'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#e8e0d0;width:26px;text-align:right;">{pct}%</div>'
+                f'</div>', unsafe_allow_html=True)
+
+    # Decision Mode — hidden from UI but variables kept for scoring logic
+    if mode == "🏭 Industrial":
+        decision_input = ""
+        dm_adjustments, dm_keywords, dm_narrative = {}, [], ""
+        st.divider()
+        st.markdown('<span class="sidebar-label">Weight Profile</span>', unsafe_allow_html=True)
+        weight_labels = {"Power ⚡":"Power","Airport ✈":"Airport","Water 💧":"Water",
+                         "Ecosystem 🏭":"Ecosystem","Workforce 👷":"Workforce","Incentives 🏷️":"Incentive"}
+        for label,key in weight_labels.items():
+            val = dna["weights"].get(key,0); pct = int(val*100)
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#4a6080;width:100px;">{label}</div>'
+                f'<div style="flex:1;background:#0d1525;border-radius:4px;height:5px;">'
+                f'<div style="width:{pct}%;background:linear-gradient(90deg,#c9a84c,#a07840);height:5px;border-radius:4px;"></div></div>'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#e8e0d0;width:26px;text-align:right;">{pct}%</div>'
+                f'</div>', unsafe_allow_html=True)
+    else:
+        dm_adjustments, dm_keywords, dm_narrative = {}, [], ""
+        decision_input = ""
 
     st.divider()
-    # ── FEATURE 5: DECISION MODE ──────────────────────────────────────────────
-    st.markdown('<span class="sidebar-label">🎯 Decision Mode</span>', unsafe_allow_html=True)
-    decision_input = st.text_input(
-        "",
-        placeholder="e.g. food processing export unit",
-        label_visibility="collapsed",
-        key="decision_mode_input",
-        help="Type your business intent — the engine will auto-adjust scoring weights."
-    )
-    dm_adjustments, dm_keywords, dm_narrative = parse_decision_mode(decision_input)
-    if dm_adjustments:
-        st.markdown(
-            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.62rem;color:#c9a84c;'
-            f'background:#0e0520;border:1px solid #3a1a50;border-radius:8px;padding:0.5rem 0.8rem;'
-            f'margin-top:0.3rem;line-height:1.7;">'
-            f'🔑 Keywords: {", ".join(dm_keywords)}<br>'
-            f'⚖️ {dm_narrative if dm_narrative else "Weights adjusted"}</div>',
-            unsafe_allow_html=True
-        )
-    elif decision_input.strip():
-        st.markdown(
-            '<div style="font-family:JetBrains Mono,monospace;font-size:0.62rem;color:#3a2a10;'
-            'margin-top:0.3rem;">No keywords detected — try: export, agro, manufacturing, cost…</div>',
-            unsafe_allow_html=True
-        )
-    st.divider()
-    st.markdown('<span class="sidebar-label">Weight Profile</span>', unsafe_allow_html=True)
-    weight_labels = {"Power ⚡":"Power","Airport ✈":"Airport","Water 💧":"Water",
-                     "Ecosystem 🏭":"Ecosystem","Workforce 👷":"Workforce","Incentives 🏷️":"Incentive"}
-    for label,key in weight_labels.items():
-        val = dna["weights"].get(key,0); pct = int(val*100)
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">'
-            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#4a6080;width:100px;">{label}</div>'
-            f'<div style="flex:1;background:#0d1525;border-radius:4px;height:5px;">'
-            f'<div style="width:{pct}%;background:linear-gradient(90deg,#c9a84c,#a07840);height:5px;border-radius:4px;"></div></div>'
-            f'<div style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:#e8e0d0;width:26px;text-align:right;">{pct}%</div>'
-            f'</div>', unsafe_allow_html=True)
 
-    st.divider()
-    st.markdown('<span class="sidebar-label">Data Layers</span>', unsafe_allow_html=True)
-    for name,count,ok in [
-        ("Land Parcels",       f"{len(land)} parcels",                        True),
-        ("Water Bodies",       f"{len(water) if water is not None else 0}",   water is not None and not water.empty),
-        ("Corridor Companies", f"{len(corridor)} cos",                         not corridor.empty),
-        ("Substations",        f"{len(substations)} nodes",                   True),
-        ("Railway Stations",   f"{len(rail_stations)} stations",              len(rail_stations)>0),
-        ("SIDCO Estates",      f"{len(sidco)} estates",                       not sidco.empty),
-        ("Highway Junctions",  f"{len(highway_junctions)} junctions",         len(highway_junctions)>0),
-        ("ICD / Dry Port",     f"{len(icd_points)} depot(s)",                 len(icd_points)>0),
-        ("Workforce Zones",    f"{len(workforce_df)} areas",                  not workforce_df.empty),
-        ("Incentive Blocks",   f"{len(incentive_df)} blocks",                 not incentive_df.empty),
-        ("Google Maps API",    "Connected" if GMAPS_KEY else "No key set",    bool(GMAPS_KEY)),
-    ]:
-        dot = "🟢" if ok else "🔴"
-        st.markdown(f'<div class="stat-row"><span class="stat-label">{dot} {name}</span>'
-                    f'<span class="stat-val">{count}</span></div>', unsafe_allow_html=True)
+    if mode == "🏭 Industrial":
+        # ── INDUSTRIAL DATA LAYERS (unchanged) ───────────────────────────────
+        st.markdown('<span class="sidebar-label">Data Layers</span>', unsafe_allow_html=True)
+        for name, count, ok in [
+            ("Land Parcels",       f"{len(land)} parcels",                        True),
+            ("Water Bodies",       f"{len(water) if water is not None else 0} (API)" if (GMAPS_KEY and water is not None and not water.empty) else f"{len(water) if water is not None else 0} (CSV)",   water is not None and not water.empty),
+            ("Corridor Companies", f"{len(corridor)} cos (API)" if (GMAPS_KEY and not corridor.empty) else f"{len(corridor)} cos (CSV)",   not corridor.empty),
+            ("Substations",        f"{len(substations_rich)} nodes (API+known)" if (GMAPS_KEY and len(substations_rich)>13) else f"{len(substations_rich)} nodes (known)",   True),
+            ("Railway Stations",   f"{len(rail_stations)} (API)" if (GMAPS_KEY and len(rail_stations)>0) else f"{len(rail_stations)} (CSV)",   len(rail_stations)>0),
+            ("SIDCO Estates",      f"{len(sidco)} (API)" if (GMAPS_KEY and not sidco.empty) else f"{len(sidco)} (CSV)",   not sidco.empty),
+            ("Highway Junctions",  f"{len(highway_junctions)} (hardcoded)",        len(highway_junctions)>0),
+            ("ICD / Dry Port",     f"{len(icd_points)} depot(s) (hardcoded)",      len(icd_points)>0),
+            ("Workforce Zones",    f"{len(workforce_df)} areas",                   not workforce_df.empty),
+            ("Incentive Blocks",   f"{len(incentive_df)} blocks",                  not incentive_df.empty),
+            ("Google Maps API",    "Connected ✓" if GMAPS_KEY else "No key set",   bool(GMAPS_KEY)),
+        ]:
+            dot = "🟢" if ok else "🔴"
+            st.markdown(f'<div class="stat-row"><span class="stat-label">{dot} {name}</span>'
+                        f'<span class="stat-val">{count}</span></div>', unsafe_allow_html=True)
+
+    else:
+        # ── COMMERCIAL DATA LAYERS ────────────────────────────────────────────
+        st.markdown('<span class="sidebar-label">Commercial Data Layers</span>', unsafe_allow_html=True)
+
+        _comm_parcel_count = len(comm_land) if not comm_land.empty else 0
+        _comm_sqft_valid   = int(comm_land["Sq.ft"].notna().sum()) if not comm_land.empty and "Sq.ft" in comm_land.columns else 0
+        _comm_with_links   = int((comm_land["Google Drive Link"].notna() & ~comm_land["Google Drive Link"].isin(["—","nan",""])).sum()) if not comm_land.empty and "Google Drive Link" in comm_land.columns else 0
+        _comm_villages     = comm_land["Village Name"].nunique() if not comm_land.empty and "Village Name" in comm_land.columns else 0
+        _comm_types        = comm_land["Property/Service Type"].nunique() if not comm_land.empty and "Property/Service Type" in comm_land.columns else 0
+
+        # Fetch live commercial ecosystem counts (cached, CBE city centre)
+        _comm_eco_counts = {}
+        if GMAPS_KEY:
+            try:
+                _comm_eco_counts = get_commercial_ecosystem(
+                    CBE_CENTRE[0], CBE_CENTRE[1], GMAPS_KEY, radius=10000
+                )
+            except Exception:
+                _comm_eco_counts = {}
+
+        _malls        = _comm_eco_counts.get("malls", 0)
+        _restaurants  = _comm_eco_counts.get("restaurants", 0)
+        _supermarkets = _comm_eco_counts.get("supermarkets", 0)
+        _banks        = _comm_eco_counts.get("banks", 0)
+        _schools      = _comm_eco_counts.get("schools", 0)
+        _offices      = _comm_eco_counts.get("offices", 0)
+
+        for name, count, ok in [
+            ("Commercial Parcels",   f"{_comm_parcel_count} listings",              _comm_parcel_count > 0),
+            ("With Size (Sq.ft)",    f"{_comm_sqft_valid} parsed",                  _comm_sqft_valid > 0),
+            ("With Drive Photos",    f"{_comm_with_links} linked",                  _comm_with_links > 0),
+            ("Villages / Areas",     f"{_comm_villages} zones",                     _comm_villages > 0),
+            ("Property Types",       f"{_comm_types} categories",                   _comm_types > 0),
+            ("Malls & Anchors",      f"{_malls} (API)" if GMAPS_KEY else "—",       _malls > 0 or not GMAPS_KEY),
+            ("Restaurants & Cafes",  f"{_restaurants} (API)" if GMAPS_KEY else "—", _restaurants > 0 or not GMAPS_KEY),
+            ("Supermarkets",         f"{_supermarkets} (API)" if GMAPS_KEY else "—",_supermarkets > 0 or not GMAPS_KEY),
+            ("Banks & ATMs",         f"{_banks} (API)" if GMAPS_KEY else "—",       _banks > 0 or not GMAPS_KEY),
+            ("Schools & Colleges",   f"{_schools} (API)" if GMAPS_KEY else "—",     _schools > 0 or not GMAPS_KEY),
+            ("Office / IT Parks",    f"{_offices} (API)" if GMAPS_KEY else "—",     _offices > 0 or not GMAPS_KEY),
+            ("Google Maps API",      "Connected ✓" if GMAPS_KEY else "No key set",  bool(GMAPS_KEY)),
+        ]:
+            dot = "🟢" if ok else "🔴"
+            st.markdown(f'<div class="stat-row"><span class="stat-label">{dot} {name}</span>'
+                        f'<span class="stat-val">{count}</span></div>', unsafe_allow_html=True)
 
     if not GMAPS_KEY:
         st.divider()
@@ -1813,6 +2889,296 @@ with st.sidebar:
         st.caption("Set in `app.py` at the top:")
         st.code('GOOGLE_MAPS_API_KEY = "your-key-here"', language="python")
 
+
+
+# ── Parse acre selection (outside sidebar, global scope) ─────────────────────
+if "_selected_acre_range" in dir() and _selected_acre_range and _selected_acre_range != "— Select Land Size —":
+    _lo_str, _rest = _selected_acre_range.split("–")
+    _hi_str = _rest.split(" ")[0]
+    filter_acres = (float(_lo_str.strip()), float(_hi_str.strip()))
+else:
+    filter_acres = None
+
+filter_price = None
+
+# ── Parse Sq.ft selection for commercial mode ─────────────────────────────────
+if "_selected_sqft_range" in dir() and _selected_sqft_range and _selected_sqft_range != "— Select Size —":
+    _sq_lo_str, _sq_rest = _selected_sqft_range.split("–")
+    _sq_hi_str = _sq_rest.split(" ")[0]
+    filter_sqft = (float(_sq_lo_str.strip()), float(_sq_hi_str.strip()))
+else:
+    filter_sqft = None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── COMMERCIAL MODE ─────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+if mode == "🏢 Commercial":
+
+    # ── Gate: require commercial data ───────────────────────────────────────────
+    if comm_land.empty:
+        st.error("❌ Cannot load commercial inventory. Ensure 'output_commercial_with_coordinates.xlsx' "
+                 "is in the app folder.")
+        st.stop()
+
+    # ── Gate: require Sq.ft size filter ─────────────────────────────────────────
+    if filter_sqft is None:
+        st.markdown("""
+<div style="background:linear-gradient(135deg,#0c1018,#101828);border:1px solid #c9a84c40;
+border-left:4px solid #c9a84c;border-radius:14px;padding:1.8rem 2rem;margin:2rem 0;text-align:center;">
+  <div style="font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#c9a84c;
+  letter-spacing:3px;text-transform:uppercase;margin-bottom:0.8rem;">Action Required</div>
+  <div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:700;color:#e8e0d0;margin-bottom:0.5rem;">
+  Select a Size Range to Begin</div>
+  <div style="font-family:JetBrains Mono,monospace;font-size:0.75rem;color:#6a7080;">
+  Use the <strong style="color:#c9a84c;">🔎 Filter by Size (Sq.ft)</strong> dropdown in the sidebar<br>
+  to choose your required property size — the engine will then rank matching commercial parcels.</div>
+</div>""", unsafe_allow_html=True)
+        st.stop()
+
+    # ── Apply Sq.ft filter ───────────────────────────────────────────────────────
+    _sq_lo, _sq_hi = filter_sqft
+    filtered_comm = comm_land[
+        comm_land["Sq.ft"].notna() &
+        comm_land["Sq.ft"].between(_sq_lo, _sq_hi)
+    ].reset_index(drop=True)
+
+    if filtered_comm.empty:
+        st.warning(f"⚠️ No commercial parcels found in the {_sq_lo:,.0f}–{_sq_hi:,.0f} sq.ft range. "
+                   "Try a different size range.")
+        st.stop()
+
+    st.markdown(
+        f'<div style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:#4ade80;'
+        f'background:#0d2014;border:1px solid #1e5028;border-radius:8px;padding:0.4rem 1rem;'
+        f'margin-bottom:0.8rem;display:inline-block;">'
+        f'✅ {len(filtered_comm)} commercial parcels in {_sq_lo:,.0f}–{_sq_hi:,.0f} sq.ft range</div>',
+        unsafe_allow_html=True
+    )
+
+    # ── Score & rank using COMMERCIAL_DNA ────────────────────────────────────────
+    # Commercial scoring: proximity-based dimensions using available data fields
+    # We score each parcel via compute_commercial_score if API key present;
+    # otherwise use a lightweight heuristic based on available columns.
+    def _score_comm_parcel(row, cdna_weights):
+        """
+        Lightweight commercial score without API:
+        - Footfall proxy: Village Name not empty
+        - Visibility proxy: Facing known
+        - Accessibility proxy: lat/lon valid (always true here)
+        - Competition: default mid score
+        - Catchment: default mid score
+        - Parking: default mid score
+        Returns 0–1 float.
+        """
+        scores = {}
+        scores["Footfall"]      = 6.0 if str(row.get("Village Name", "")).strip() not in ("—", "nan", "") else 3.0
+        scores["Visibility"]    = 7.0 if str(row.get("Facing", "")).strip() not in ("—", "nan", "") else 4.0
+        scores["Accessibility"] = 6.0
+        scores["Competition"]   = 5.0
+        scores["Catchment"]     = 6.0
+        scores["Parking"]       = 5.0
+        weighted = sum(cdna_weights.get(k, 0) * v / 10.0 for k, v in scores.items())
+        return round(weighted, 4)
+
+    filtered_comm = filtered_comm.copy()
+    filtered_comm["comm_score"] = filtered_comm.apply(
+        lambda r: _score_comm_parcel(r, cdna["weights"]), axis=1
+    )
+    filtered_comm = filtered_comm.sort_values("comm_score", ascending=False).reset_index(drop=True)
+
+    # ── Helper: render a commercial parcel card ──────────────────────────────────
+    def _parse_drive_links(raw):
+        """Extract all Google Drive URLs from a raw cell value (may be newline-separated)."""
+        if not raw or raw in ("—", "nan", "None", ""):
+            return []
+        urls = [u.strip() for u in re.split(r"[\n\r]+", raw) if u.strip()]
+        return [u for u in urls if u.startswith("http")]
+
+    def _render_comm_card(row, rank_label, rank_css=""):
+        village  = str(row.get("Village Name", "—")).strip() or "—"
+        sqft     = f"{row['Sq.ft']:,.0f}" if pd.notna(row.get("Sq.ft")) else "—"
+        rent     = str(row.get("Rent", "—")).strip() or "—"
+        prop_type= str(row.get("Property/Service Type", "—")).strip() or "—"
+        facing   = str(row.get("Facing", "—")).strip() or "—"
+        drive_raw= str(row.get("Google Drive Link", "—")).strip()
+        c_lat_r  = row.get("lat", None)
+        c_lon_r  = row.get("lon", None)
+        score_pct= int(row.get("comm_score", 0) * 100)
+
+        # Build clickable links for all drive URLs in the cell
+        drive_links = _parse_drive_links(drive_raw)
+        if drive_links:
+            link_tags = " &nbsp; ".join(
+                f'<a href="{u}" target="_blank" rel="noopener noreferrer" '
+                f'style="color:#4ade80;text-decoration:underline;font-family:JetBrains Mono,monospace;font-size:0.74rem;">'
+                f'📸 Photo {i+1}</a>'
+                for i, u in enumerate(drive_links)
+            )
+            drive_html = link_tags
+        else:
+            drive_html = '<span style="color:#3a4050;">No link available</span>'
+
+        coord_str = f"{c_lat_r:.5f}, {c_lon_r:.5f}" if c_lat_r and c_lon_r else "—"
+
+        return f"""
+<div class="winner-card" style="border-color:#3a1a50;{rank_css}">
+  <div class="winner-eyebrow" style="color:#a070e0;">{rank_label} · Commercial Score {score_pct}/100</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-top:1rem;">
+    <div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:#c9a84c;letter-spacing:2px;text-transform:uppercase;">📍 Location</div>
+      <div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700;color:#fff;margin-top:2px;">{village}</div>
+    </div>
+    <div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:#c9a84c;letter-spacing:2px;text-transform:uppercase;">📐 Size</div>
+      <div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700;color:#fff;margin-top:2px;">{sqft} sq.ft</div>
+    </div>
+    <div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:#c9a84c;letter-spacing:2px;text-transform:uppercase;">💰 Rent</div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.78rem;color:#e8e0d0;margin-top:2px;">{rent}</div>
+    </div>
+    <div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:#c9a84c;letter-spacing:2px;text-transform:uppercase;">🏢 Type</div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.78rem;color:#e8e0d0;margin-top:2px;">{prop_type}</div>
+    </div>
+    <div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:#c9a84c;letter-spacing:2px;text-transform:uppercase;">🧭 Facing</div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.78rem;color:#e8e0d0;margin-top:2px;">{facing}</div>
+    </div>
+    <div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:#c9a84c;letter-spacing:2px;text-transform:uppercase;">📍 Coordinates</div>
+      <div style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:#c9a84c60;margin-top:2px;">{coord_str}</div>
+    </div>
+  </div>
+  <div style="margin-top:0.9rem;padding-top:0.7rem;border-top:1px solid #1e2a3a;">
+    <div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:#c9a84c;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">📸 Google Drive Photos</div>
+    <div style="line-height:2;">{drive_html}</div>
+  </div>
+</div>"""
+
+    # ── Top 1 Result ─────────────────────────────────────────────────────────────
+    st.markdown('<div class="section-header"><span class="section-icon">🥇</span>'
+                '<span class="section-title">Top Commercial Match</span>'
+                '<div class="section-line"></div></div>', unsafe_allow_html=True)
+
+    top1 = filtered_comm.iloc[0]
+    st.markdown(_render_comm_card(top1, "🥇 #1 Best Match", "border-left:4px solid #c9a84c;"),
+                unsafe_allow_html=True)
+
+    # ── Top 3 Results ────────────────────────────────────────────────────────────
+    st.markdown('<div class="section-header"><span class="section-icon">🏆</span>'
+                '<span class="section-title">Top 3 Commercial Parcels</span>'
+                '<div class="section-line"></div></div>', unsafe_allow_html=True)
+
+    top3 = filtered_comm.head(3)
+    for idx, (_, row) in enumerate(top3.iterrows()):
+        labels  = ["🥇 #1 Best Match", "🥈 #2 Runner-Up", "🥉 #3 Third Pick"]
+        borders = ["border-left:4px solid #c9a84c;", "border-left:4px solid #a0a0a0;", "border-left:4px solid #a07840;"]
+        st.markdown(_render_comm_card(row, labels[idx], borders[idx]), unsafe_allow_html=True)
+
+    # ── Commercial Map ─────────────────────────────────────────────────────────
+    st.divider()
+    st.markdown('<div class="section-header"><span class="section-icon">🗺️</span>'
+                '<span class="section-title">Commercial Location Map</span>'
+                '<div class="section-line"></div></div>', unsafe_allow_html=True)
+
+    comm_map_rows = []
+    top_idx = filtered_comm.head(3).index.tolist()
+    for i, (orig_i, row) in enumerate(filtered_comm.iterrows()):
+        if orig_i == 0:
+            color, radius = [255, 60, 80, 240], 380
+        elif orig_i == 1:
+            color, radius = [255, 160, 20, 240], 300
+        elif orig_i == 2:
+            color, radius = [160, 80, 255, 220], 260
+        else:
+            color, radius = [40, 100, 200, 130], 180
+        label = f"📍 {row.get('Village Name','?')} · {row.get('Sq.ft','?'):,.0f} sq.ft · {row.get('Rent','?')}"
+        comm_map_rows.append({"lat": row["lat"], "lon": row["lon"], "color": color, "radius": radius, "label": label})
+
+    comm_map_df = pd.DataFrame(comm_map_rows)
+    comm_layers = [pdk.Layer("ScatterplotLayer", data=comm_map_df,
+                             get_position="[lon,lat]", get_color="color",
+                             get_radius="radius", pickable=True, auto_highlight=True,
+                             highlight_color=[255, 255, 255, 80])]
+
+    # Glow ring on top result
+    comm_layers.insert(0, pdk.Layer("ScatterplotLayer",
+        data=pd.DataFrame([{"lat": filtered_comm.iloc[0]["lat"], "lon": filtered_comm.iloc[0]["lon"],
+                            "color": [255, 60, 80, 50], "radius": 700, "label": ""}]),
+        get_position="[lon,lat]", get_color="color", get_radius="radius", pickable=False))
+
+    if "live_places_df" in st.session_state and not st.session_state["live_places_df"].empty:
+        comm_layers.append(pdk.Layer("ScatterplotLayer",
+            data=st.session_state["live_places_df"],
+            get_position="[lon,lat]", get_color="color", get_radius="radius", pickable=True))
+
+    comm_tooltip = {"html": '<div style="font-family:JetBrains Mono,monospace;font-size:11px;background:#0d1525;'
+                            'color:#e8e0d0;border:1px solid #3a2a10;border-radius:8px;padding:10px 14px;'
+                            'max-width:340px;line-height:1.7;">{label}</div>',
+                    "style": {"backgroundColor": "transparent", "border": "none"}}
+
+    c_lat_map = filtered_comm["lat"].mean()
+    c_lon_map = filtered_comm["lon"].mean()
+    st.pydeck_chart(pdk.Deck(
+        layers=comm_layers,
+        initial_view_state=pdk.ViewState(latitude=c_lat_map, longitude=c_lon_map, zoom=12, pitch=35),
+        tooltip=comm_tooltip,
+        map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+    ))
+
+    st.markdown("""
+<div class="map-legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#ff3c50;box-shadow:0 0 8px #ff3c50;"></div>#1 Match</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffa014;"></div>#2 Match</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a050ff;"></div>#3 Match</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2864c8;opacity:0.6;"></div>Other Parcels</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffd700;"></div>Live Places (Maps)</div>
+</div>""", unsafe_allow_html=True)
+
+    # ── Google Maps Commercial Intelligence ────────────────────────────────────
+    if GMAPS_KEY:
+        st.divider()
+        st.markdown('<div class="section-header"><span class="section-icon">🛰️</span>'
+                    '<span class="section-title">Google Maps Commercial Intelligence</span>'
+                    '<div class="section-line"></div></div>', unsafe_allow_html=True)
+
+        c_lat = float(filtered_comm.iloc[0]["lat"])
+        c_lon = float(filtered_comm.iloc[0]["lon"])
+
+        ctab1, ctab2, ctab3 = st.tabs([
+            "🏪 Live Ecosystem Scan",
+            "🚗 Commercial Drive Times",
+            "🔍 Reverse Location Analysis",
+        ])
+        with ctab1:
+            render_commercial_ecosystem_scan(c_lat, c_lon, comm_type, GMAPS_KEY)
+        with ctab2:
+            render_commercial_drive_times(c_lat, c_lon, GMAPS_KEY)
+        with ctab3:
+            render_commercial_reverse_analysis(c_lat, c_lon, comm_type, GMAPS_KEY)
+
+    # ── Full Table ─────────────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("📋 Full Ranked Commercial Data Table"):
+        _dcols_c = ["Village Name", "Sq.ft", "Rent", "Property/Service Type", "Facing", "Google Drive Link", "comm_score"]
+        _dcols_c = [c for c in _dcols_c if c in filtered_comm.columns]
+        _disp_c = filtered_comm[_dcols_c].copy()
+        _disp_c.insert(0, "Rank", range(1, len(_disp_c) + 1))
+        st.dataframe(_disp_c.rename(columns={"comm_score": "Score ↓"}).style.format({"Score ↓": "{:.4f}"}),
+                     use_container_width=True, hide_index=True)
+
+    st.markdown("""
+<div style="text-align:center;margin-top:2rem;padding:1rem;font-family:JetBrains Mono,monospace;
+font-size:0.62rem;color:#1a2840;letter-spacing:2px;">
+CBE COMMERCIAL INTELLIGENCE ENGINE v2 · PEOPLE-DRIVEN LOGIC · GOOGLE MAPS EDITION ·
+FOOTFALL × VISIBILITY × ACCESSIBILITY × COMPETITION × CATCHMENT × PARKING × LIVE PLACES
+</div>""", unsafe_allow_html=True)
+
+    st.stop()   # ← commercial mode complete; do not run industrial blocks below
+
+
+# ── INDUSTRIAL MODE (existing flow unchanged below) ──────────────────────────────
 
 # ── SEARCH BAR ────────────────────────────────────────────────────────────────────
 st.markdown('<div class="search-wrapper"><div class="search-title">🔍 Natural Language Site Search</div></div>',
@@ -1837,10 +3203,52 @@ if query.strip():
 st.divider()
 
 
+# ── APPLY PARCEL FILTERS ─────────────────────────────────────────────────────────
+# Require an acre range selection before proceeding to scoring & ranking
+if filter_acres is None:
+    st.markdown("""
+<div style="background:linear-gradient(135deg,#0c1018,#101828);border:1px solid #c9a84c40;
+border-left:4px solid #c9a84c;border-radius:14px;padding:1.8rem 2rem;margin:2rem 0;text-align:center;">
+  <div style="font-family:JetBrains Mono,monospace;font-size:0.65rem;color:#c9a84c;
+  letter-spacing:3px;text-transform:uppercase;margin-bottom:0.8rem;">Action Required</div>
+  <div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:700;color:#e8e0d0;margin-bottom:0.5rem;">
+  Select a Land Size Range to Begin</div>
+  <div style="font-family:JetBrains Mono,monospace;font-size:0.75rem;color:#6a7080;">
+  Use the <strong style="color:#c9a84c;">🔎 Filter by Land Size</strong> dropdown in the sidebar<br>
+  to choose your required acreage — the engine will then rank and score matching parcels.</div>
+</div>""", unsafe_allow_html=True)
+    st.stop()
+
+_land_filtered = land.copy()
+
+_ac_lo, _ac_hi = filter_acres
+_land_filtered = _land_filtered[
+    _land_filtered["Acres"].notna() &
+    _land_filtered["Acres"].between(_ac_lo, _ac_hi)
+].reset_index(drop=True)
+
+if _land_filtered.empty:
+    st.warning(f"⚠️ No parcels found in the {_ac_lo}–{_ac_hi} Acres range. Try a different range.")
+    st.stop()
+
+st.markdown(
+    f'<div style="font-family:JetBrains Mono,monospace;font-size:0.68rem;color:#4ade80;'
+    f'background:#0d2014;border:1px solid #1e5028;border-radius:8px;padding:0.4rem 1rem;'
+    f'margin-bottom:0.8rem;display:inline-block;">✅ {len(_land_filtered)} parcels in {_ac_lo}–{_ac_hi} Acres range</div>',
+    unsafe_allow_html=True
+)
+
 # ── DISTANCES ─────────────────────────────────────────────────────────────────────
-df = land.copy()
+df = _land_filtered.copy()
 df["airport_dist"] = df.apply(lambda r: haversine(r["lat"],r["lon"],*AIRPORT), axis=1)
-df["power_dist"]   = df.apply(lambda r: min_dist(r["lat"],r["lon"],substations), axis=1)
+
+# Voltage-aware power distance: effective_dist = actual_dist * voltage_multiplier
+# 400kV → 0.70x  |  230kV → 0.85x  |  110kV → 1.00x  (lower = scored as closer)
+_vd = df.apply(lambda r: voltage_aware_power_dist(r["lat"], r["lon"], substations_rich, industry), axis=1)
+df["power_dist"]        = _vd.apply(lambda x: x[0])   # effective distance used in scoring
+df["power_sub_name"]    = _vd.apply(lambda x: x[1])   # nearest substation name
+df["power_sub_kv"]      = _vd.apply(lambda x: x[2])   # voltage in kV
+df["power_dist_actual"] = _vd.apply(lambda x: x[3])   # raw km (for display only)
 df["rail_dist"]    = df.apply(lambda r: min_dist(r["lat"],r["lon"],rail_stations), axis=1) if rail_stations else np.nan
 df["water_dist"]   = df.apply(lambda r: min_dist(r["lat"],r["lon"],list(zip(water["latitude"],water["longitude"]))), axis=1) \
                      if water is not None and not water.empty else np.nan
@@ -1961,19 +3369,34 @@ df["search_penalty"] = df.apply(lambda r: constraint_penalty(r,constraints), axi
 df["final_score"] = df["base_score"] + df["search_penalty"]
 df = df.sort_values("final_score").reset_index(drop=True)
 
-area_col   = detect_col(df,["area","location","name","place","parcel_name"]) or df.columns[0]
-survey_col = detect_col(df,["survey_no","survey","parcel_id","id","plot_no"]) or df.columns[1]
+area_col   = detect_col(df, ["Property ID", "area", "location", "name", "place", "parcel_name"]) or df.columns[0]
+survey_col = detect_col(df, ["GOOGLE MAP", "survey_no", "survey", "parcel_id", "id", "plot_no"]) or df.columns[1]
 top = df.head(min(3,len(df))).copy()
 winner = df.iloc[0]
 
 
 # ── WINNER CARD ───────────────────────────────────────────────────────────────────
 score_pct = max(0,min(100,int((1-winner["final_score"])*100)))
+# Pull extra fields from raw data for display
+_w_size     = winner.get("Land Area", winner.get("Acres", ""))
+_w_price    = winner.get("QUOTED PRICE", winner.get("Price", ""))
+_w_location = winner.get("Location", "")
+_w_subloc   = winner.get("Sub -Location", "")
+_w_class    = winner.get("CLASSIFICATION", "")
+_w_loc_str  = ", ".join(str(x) for x in [_w_location, _w_subloc] if str(x) not in ("", "nan"))
+_w_price_str = str(_w_price) if str(_w_price) not in ("", "nan", "None") else "—"
+_w_size_str  = str(_w_size)  if str(_w_size)  not in ("", "nan", "None") else "—"
+_w_class_str = str(_w_class) if str(_w_class) not in ("", "nan", "None") else "—"
+
 st.markdown(f"""
 <div class="winner-card">
   <div class="winner-eyebrow">Top Recommended Site · {dna['icon']} {industry}</div>
   <div class="winner-name">{winner[area_col]}</div>
-  <div class="winner-meta">Survey No. {winner[survey_col]}
+  <div class="winner-meta" style="line-height:2;">
+    📍 {_w_loc_str if _w_loc_str else "—"} &nbsp;·&nbsp;
+    🏷️ {_w_class_str} &nbsp;·&nbsp;
+    📐 {_w_size_str} &nbsp;·&nbsp;
+    💰 {_w_price_str}
     <span class="winner-score">Suitability Score {score_pct}/100</span>
   </div>
 </div>""", unsafe_allow_html=True)
@@ -1994,7 +3417,7 @@ st.markdown(f"""
     <div class="metric-value">{winner['airport_dist']:.1f}</div><div class="metric-unit">km</div>
     <div class="metric-status-{a_cls}">{a_lbl}</div></div>
   <div class="metric-card"><div class="metric-icon">⚡</div><div class="metric-label">Substation</div>
-    <div class="metric-value">{winner['power_dist']:.1f}</div><div class="metric-unit">km</div>
+    <div class="metric-value">{winner['power_dist_actual']:.1f}</div><div class="metric-unit">km · {int(winner['power_sub_kv'])}kV</div>
     <div class="metric-status-{p_cls}">{p_lbl}</div></div>
   <div class="metric-card"><div class="metric-icon">💧</div><div class="metric-label">Water</div>
     <div class="metric-value">{winner['water_dist']:.1f}</div><div class="metric-unit">km</div>
@@ -2195,12 +3618,20 @@ with col_right:
         r_score=max(0,min(100,int((1-row["final_score"])*100)))
         wf_pct=int(row["workforce_score"]*100)
         inc_short="Backward" if row["incentive_tier"].lower()=="backward" else "Standard"
+        _r_size    = row.get("Land Area", row.get("Acres", ""))
+        _r_price   = row.get("QUOTED PRICE", row.get("Price", ""))
+        _r_loc     = row.get("Location", "")
+        _r_class   = row.get("CLASSIFICATION", "")
+        _r_size_s  = str(_r_size)  if str(_r_size)  not in ("", "nan", "None") else "—"
+        _r_price_s = str(_r_price) if str(_r_price) not in ("", "nan", "None") else "—"
+        _r_loc_s   = str(_r_loc)   if str(_r_loc)   not in ("", "nan", "None") else "—"
+        _r_class_s = str(_r_class) if str(_r_class) not in ("", "nan", "None") else "—"
         st.markdown(f"""
 <div class="rank-card {rank_cls}">
   <div class="rank-number">#{rank}</div>
   <div class="rank-info">
     <div class="rank-name">{row[area_col]}</div>
-    <div class="rank-survey">Survey {row[survey_col]} · Score {r_score}/100 {tag}</div>
+    <div class="rank-survey">📍 {_r_loc_s} &nbsp;·&nbsp; 🏷️ {_r_class_s} &nbsp;·&nbsp; 📐 {_r_size_s} &nbsp;·&nbsp; 💰 {_r_price_s} &nbsp;·&nbsp; Score {r_score}/100 {tag}</div>
     <div class="rank-badges">
       <span class="badge b-eco">🏭 {int(row['ecosystem'])}pts</span>
       <span class="badge b-pwr">⚡ {row['power_dist']:.1f}km</span>
@@ -2616,10 +4047,17 @@ layers.insert(0,pdk.Layer("ScatterplotLayer",
     data=pd.DataFrame([{"lat":df.iloc[0]["lat"],"lon":df.iloc[0]["lon"],"color":[255,60,80,50],"radius":900,"label":""}]),
     get_position="[lon,lat]",get_color="color",get_radius="radius",pickable=False))
 
-# Substations
+# Substations — colour by voltage: 400kV=gold, 230kV=orange, 110kV=yellow
+def _sub_color(kv):
+    if kv >= 400: return [255, 200, 0, 240]    # gold
+    if kv >= 230: return [255, 140, 0, 220]    # orange
+    return [255, 220, 80, 190]                  # yellow (110kV)
+
 layers.append(pdk.Layer("ScatterplotLayer",
-    data=pd.DataFrame([{"lat":s[0],"lon":s[1],"label":f"⚡ {n}","color":[255,200,0,200],"radius":220}
-                        for s,n in zip(substations,sub_names)]),
+    data=pd.DataFrame([{"lat":s["lat"],"lon":s["lon"],
+                        "label":f"⚡ {s['name']} · {s['voltage_kv']}kV",
+                        "color":_sub_color(s["voltage_kv"]),"radius":220}
+                       for s in substations_rich]),
     get_position="[lon,lat]",get_color="color",get_radius="radius",pickable=True))
 
 # Railway
@@ -2675,7 +4113,9 @@ st.markdown("""
   <div class="legend-item"><div class="legend-dot" style="background:#ffa014;"></div>#2 Site</div>
   <div class="legend-item"><div class="legend-dot" style="background:#a050ff;"></div>#3 Site</div>
   <div class="legend-item"><div class="legend-dot" style="background:#2864c8;opacity:0.6;"></div>Other Parcels</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#ffc800;"></div>Substations</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffc800;"></div>Substations 400kV</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff8c00;"></div>Substations 230kV</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffdc50;"></div>Substations 110kV</div>
   <div class="legend-item"><div class="legend-dot" style="background:#00dc8c;"></div>Railway Stations</div>
   <div class="legend-item"><div class="legend-dot" style="background:#00c8ff;"></div>SIDCO Estates</div>
   <div class="legend-item"><div class="legend-dot" style="background:#14b4e6;opacity:0.7;"></div>Water Bodies</div>
